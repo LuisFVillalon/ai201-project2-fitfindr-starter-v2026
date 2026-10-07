@@ -60,7 +60,7 @@
 ### `search_listings`
 
 - **What it does:**
-Filters data/listings.json to items whose title, description, or style_tags share at least one keyword with description, whose size matches size, and whose price is at or below max_price.
+Filters data/listings.json to items whose title, description, or style_tags share at least one keyword with description, whose size matches size, and whose price is at or below max_price. Keywords are matched as whole words, and common filler words ("a", "the", "for", "under", "size", ...) are ignored.
 - **Inputs:**
 description (str, keywords like "vintage graphic tee"), size (str or None, e.g. "M"; None skips the size filter), max_price (float or None, inclusive; None skips the price filter)
 - **Size match rule:**
@@ -135,18 +135,58 @@ $ python app.py ask '...'
 **The three tools, tested one at a time**
 
 ```
-$ python -c "from tools import search_listings; print(search_listings('graphic tee', max_price=30))"
-
+$ python
+>>> from tools import search_listings
+>>> search_listings('graphic tee', size='L', max_price=30)
+[{'id': 'lst_033', 'title': 'Vintage Band Tee — Faded Grey', 'description': 'Faded grey band-style tee with distressed graphic. Crew neck. Fits boxy. Well-loved but no holes or major damage.', 'category': 'tops', 'style_tags': ['vintage', 'grunge', 'band tee', 'graphic tee', 'streetwear'], 'size': 'L', 'condition': 'fair', 'price': 19.0, 'colors': ['grey', 'charcoal'], 'brand': None, 'platform': 'depop'}, {'id': 'lst_006', 'title': 'Graphic Tee — 2003 Tour Bootleg Style', 'description': 'Vintage-style bootleg tee with faded graphic. Slightly boxy fit. 100% cotton, soft and worn-in.', 'category': 'tops', 'style_tags': ['graphic tee', 'vintage', 'grunge', 'streetwear', 'band tee'], 'size': 'L', 'condition': 'good', 'price': 24.0, 'colors': ['black'], 'brand': None, 'platform': 'depop'}, {'id': 'lst_015', 'title': 'Vintage Graphic Hoodie — Faded Black', 'description': 'Faded black pullover hoodie with barely-visible vintage graphic on the chest. Cozy interior. Some pilling but adds to the worn-in look.', 'category': 'tops', 'style_tags': ['vintage', 'grunge', 'graphic', 'streetwear'], 'size': 'L', 'condition': 'fair', 'price': 26.0, 'colors': ['black', 'charcoal'], 'brand': None, 'platform': 'depop'}]
+>>> search_listings('graphic tee', max_price=5)
+[]
 ```
 
 ```
-$ python -c "from tools import suggest_outfit; ..."
+$ python -c "from tools import suggest_outfit; from utils.data_loader import get_example_wardrobe, load_listings; print(suggest_outfit(load_listings()[5], get_example_wardrobe()))"
+Outfit 1
+New item: Graphic Tee — 2003 Tour Bootleg Style
+Wardrobe pieces: Baggy straight-leg jeans, dark wash; Black combat boots; Black crossbody bag
+Why they work together: This combination leans entirely into the vintage grunge aesthetic, pairing the distressed band tee with heavy denim and rugged boots for an effortless, classic streetwear look.
 
+Outfit 2
+New item: Graphic Tee — 2003 Tour Bootleg Style
+Wardrobe pieces: Vintage black denim jacket; Wide-leg khaki trousers; Chunky white sneakers
+Why they work together: Tucking the graphic tee into the wide-leg khaki trousers creates a balanced silhouette, while the vintage black denim jacket and chunky white sneakers add a modern, casual contrast.
+
+Outfit 3
+New item: Graphic Tee — 2003 Tour Bootleg Style
+Wardrobe pieces: Black cropped zip hoodie; Baggy straight-leg jeans, dark wash; Chunky white sneakers; Black crossbody bag
+Why they work together: Layering the black cropped zip hoodie unzipped over the longer graphic tee creates a dimensional streetwear vibe that pairs seamlessly with baggy denim and chunky sneakers.
+
+$ python -c "from tools import suggest_outfit; from utils.data_loader import get_empty_wardrobe, load_listings; print(suggest_outfit(load_listings()[5], get_empty_wardrobe()))"
+Option 1
+Pair the tee with distressed light-wash mom jeans, chunky black combat boots, and a silver chain necklace. This combination leans into the vintage grunge aesthetic by contrasting the dark graphic with worn denim and edgy hardware.
+
+Option 2
+Layer the t-shirt over a tight long-sleeve mesh top, and pair it with a pleated plaid mini skirt, knee-high socks, and platform loafers. The playful school-girl elements balance the heavy, rebellious energy of the bootleg tour style.
+
+Option 3
+Tuck the graphic tee into wide-leg cargo trousers, add a nylon shoulder bag, and finish the look with retro platform sneakers. The baggy silhouettes create an effortless, high-fashion streetwear feel that looks intentional and modern.
 ```
 
 ```
-$ python -c "from tools import create_fit_card; ..."
+$ $env:AI201_CACHE='0'    # cache off, so each run is a real model call
+$ python -c "from tools import create_fit_card; from utils.data_loader import load_listings; card = create_fit_card('baggy dark-wash jeans and chunky white sneakers', load_listings()[5]); print(card); print(len(card), 'chars')"
+Scored this Graphic Tee — 2003 Tour Bootleg Style on depop for just $24. Paired it with baggy dark-wash jeans and chunky white sneakers for the ultimate grunge look. So stoked on how this fit came together.
+206 chars
 
+(same command, run 2)
+Scored this Graphic Tee — 2003 Tour Bootleg Style on depop for only $24. Paired it with baggy dark-wash jeans and chunky white sneakers for the ultimate grunge fit. Obsessed with how heavy and faded this tee is.
+211 chars
+
+(same command, run 3)
+Scored this Graphic Tee — 2003 Tour Bootleg Style on depop for only $24. Paired it with baggy dark-wash jeans and chunky white sneakers for the ultimate grunge street look. Total win.
+183 chars
+
+$ python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('   ', load_listings()[5]))"
+Can't write a fit card without an outfit.
 ```
 
 ---
