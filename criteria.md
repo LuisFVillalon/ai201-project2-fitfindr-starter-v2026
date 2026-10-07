@@ -25,9 +25,14 @@ Given a query that matches at least one listing, the agent completes all three
 tool calls and returns a fit card — in at least 4 of 5 tries.
 
 **Why this target:**
-<!-- Why 4 of 5 and not 5 of 5? Something about your search, probably —
-     "my search is a plain keyword match and some phrasings will miss" is a
-     real answer. -->
+Parsing and `search_listings` are plain Python over a fixed 40-listing file, so
+a query that matches once matches every time. The miss I'm allowing for is the
+model. Each completed run makes two model calls (`suggest_outfit` and
+`create_fit_card`) on a free tier capped at 15 requests a minute, and there's
+no `ModelUnavailable` handler until unit 4, so one failed call crashes that try.
+An empty model reply also makes `create_fit_card` return "Can't write a fit
+card without an outfit.", which doesn't count as a fit card. 5 of 5 would be
+betting that a service I don't control never hiccups.
 
 ---
 
@@ -37,66 +42,73 @@ Given a query that matches no listings, the agent stops before calling
 `suggest_outfit` and returns a message naming what to change — 5 of 5 tries.
 
 **Why this target:**
-<!-- Why is 5 of 5 reasonable here when criterion 1 isn't? What's different
-     about this path? -->
+Nothing on this path is random. The cheapest listing in `data/listings.json` is
+$12 (the braided leather belt), so "under $5" makes `search_listings` return
+`[]` every time, and my branch is one empty-list check that returns before any
+model call. The "what to change" message is built from `session["parsed"]`, so
+it comes out the same every run. If this fails once it will fail every time —
+that's a broken branch, not bad luck, so anything below 5 of 5 would be
+accepting a known bug.
 
 ---
 
-## 3. Something about state
+## 3. The item search found is the item the next two tools receive
 
-<!-- YOU WRITE THIS ONE.
+Given the query `'vintage graphic tee under $30'`, `session["selected_item"]["id"]`
+equals `session["search_results"][0]["id"]`, and the trace lines for
+`suggest_outfit` and `create_fit_card` both show that same item's title and
+price as their input — 5 of 5 tries.
 
-     How would you know that the item your search found is the same item the
-     next tool received? Name something countable or observable.
-
-     This is the criterion people find hardest, because state failure doesn't
-     look like state failure — it looks like a tool problem. Something that
-     compares session["selected_item"] against what actually reached
-     suggest_outfit is the shape you're after. -->
-
-
+<!-- Unit 4 note: when adding trace.step() calls, pass the item dict itself as
+     `inputs` so the trace prints "Title ($price, platform)". A wrapper dict
+     like {"new_item": ..., "wardrobe": ...} only prints its keys. -->
 
 **Why this target:**
-
-
+The handoff is dictionary reads from the session, with no model and no
+randomness involved, so a mismatch would be a bug in my loop (reading a stale
+variable or the wrong index) and would show up every run, not once. I check the
+ids and the trace instead of the caption text because state failure doesn't
+look like state failure: a fit card about the wrong item reads like a bad
+caption, and I'd blame the prompt.
 
 ---
 
-## 4. Something about the fit card
+## 4. The fit card keeps the facts and the length, even when the words change
 
-<!-- YOU WRITE THIS ONE.
-
-     The fit card calls a model, so the same input can produce different words
-     each time. That's not a bug — it's the nature of the tool. So what would
-     make it acceptable?
-
-     Think about what you'd actually be unhappy to see. A caption that never
-     mentions the price? Two different items producing the same opening
-     sentence? A card longer than a caption anyone would post? Any of those can
-     be turned into a number. -->
-
-
+Given the query `'vintage graphic tee under $30'` run 5 times with caching off,
+each fit card is under 280 characters, contains the selected item's price
+written as `$` and the whole-dollar amount (`$24`; `$24.00` also counts), and
+contains the item's platform name in any capitalization (`depop`, `Depop`) — in
+at least 4 of 5 tries.
 
 **Why this target:**
-
-
+The words are supposed to change at `TEMPERATURE = 0.9`. What shouldn't change
+is the facts and a length someone would actually post. Price and platform are
+in the prompt, but at 0.9 the model sometimes drops a detail or runs long with
+emoji and hashtags, and nothing in my code checks its output, so 5 of 5 would
+mean trusting the model to follow every instruction every time. Below 4 would
+mean the prompt isn't doing its job. I left the title out on purpose: the model
+paraphrases titles ("2003 tour tee"), so an exact-title check would fail good
+captions, while price and platform are exact strings I can search for.
 
 ---
 
-## 5. Your choice
+## 5. The search respects the size and price the user typed
 
-<!-- YOU WRITE THIS ONE TOO.
-
-     Pick something you actually care about getting right. Speed, the empty
-     wardrobe path, what happens when the model can't be reached, whether the
-     search respects a price ceiling — anything, as long as it names a number
-     or an observable outcome. -->
-
-
+Given the query `'graphic tee size L under $30'`, `session["parsed"]` holds size
+`"L"` and max_price `30.0`, `session["search_results"]` has at least one
+listing, and every listing in it costs $30 or less and has a size that matches
+L under my Tool Inventory rule (`L`, `L/XL`, or `One Size` — never `XL`,
+`XL (oversized)`, or `XL (fits oversized)`) — 5 of 5 tries.
 
 **Why this target:**
-
-
+Parsing and search are deterministic, so five tries give the same answer and a
+single miss means the filter is wrong, not unlucky. A size or price the user
+typed is a hard limit: showing someone a $38 item after they said under $30 is a
+broken product, not variance. The data has three XL listings under $30 (the $22
+flannel, the $21 college crewneck, the $20 navy sweatshirt), which is exactly
+the `"l" in "xl"` trap the starter warns about. "At least one listing" is there
+so an empty result can't pass by default.
 
 ---
 
