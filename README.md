@@ -41,6 +41,7 @@
 
 <!-- Three or four sentences: what a user asks for, and what they get back. -->
 
+A user types what they're thrifting for in plain words, like `'vintage graphic tee under $30'` or `'denim jacket size M'`. FitFindr pulls the size and max price out of the query, searches a file of 40 secondhand listings, and picks the best match. It then suggests 1–3 outfits that pair that item with pieces from the user's wardrobe and writes a short fit-card caption with the item's price and platform, ready to post. If nothing matches, it stops before the outfit step and says what was searched and what to change: a higher max price, a different size, or broader keywords.
 
 
 ---
@@ -113,8 +114,16 @@ If search_listings returns an empty list, put a message in session["error"] that
 **Where it lives:** `agent.py::run_agent`
 
 **How the query is parsed:** <!-- regex, string splitting, or asking the model — say which -->
+String splitting, in `agent.py::_parse_query`. The query is split into words. The word after "size" becomes the size (uppercased, so "size m" → "M"). A word starting with "$", or a number right after "under" or "below", becomes max_price ("under $30" → 30.0). Every other word goes into the description. Filler words like "a" and "for" stay in, because search_listings drops them itself. No model call is made, so the same query always parses the same way.
 
 **What moves through the session:** <!-- which fields, in what order -->
+`new_session` starts with `query` and `wardrobe`. Then, in order:
+1. `parsed` — the description, size, and max_price from `_parse_query(session["query"])`.
+2. `search_results` — the list search_listings returned for those three values.
+3. If `search_results` is empty: `error` gets the no-results message and the run stops. `selected_item`, `outfit_suggestion`, and `fit_card` stay None.
+4. Otherwise: `selected_item` — `search_results[0]`.
+5. `outfit_suggestion` — suggest_outfit(`selected_item`, `wardrobe`), both read from the session.
+6. `fit_card` — create_fit_card(`outfit_suggestion`, `selected_item`), both read from the session.
 
 ---
 
@@ -128,8 +137,27 @@ If search_listings returns an empty list, put a message in session["error"] that
 **One full query**
 
 ```
-$ python app.py ask '...'
+$ python app.py ask 'vintage graphic tee under $30'
+  Found:    Y2K Baby Tee — Butterfly Print — $18.0 on depop
 
+  Outfit:   Outfit 1
+New item: Y2K Baby Tee — Butterfly Print
+Wardrobe pieces: Baggy straight-leg jeans, dark wash; Chunky white sneakers; Black crossbody bag
+The fitted, graphic nature of the baby tee contrasts with the relaxed silhouette of the dark baggy jeans to nail that authentic Y2K streetwear aesthetic, finished cleanly with chunky white sneakers and a black crossbody bag.
+
+Outfit 2
+New item: Y2K Baby Tee — Butterfly Print
+Wardrobe pieces: Wide-leg khaki trousers; Brown leather belt; Chunky white sneakers
+The white and pink tones of the baby tee pop against the neutral wide-leg khaki trousers, creating a playful blend of Y2K style and minimalist earth tones brought together by a brown leather belt and chunky white sneakers.
+
+Outfit 3
+New item: Y2K Baby Tee — Butterfly Print
+Wardrobe pieces: Vintage black denim jacket; Baggy straight-leg jeans, dark wash; Black combat boots; Black crossbody bag
+Layering the slightly cropped vintage black denim jacket over the butterfly print tee adds a touch of grunge to the Y2K aesthetic, while the baggy straight-leg jeans, black combat boots, and black crossbody bag tie the dark elements together seamlessly.
+
+  Fit card: Found this Y2K Baby Tee — Butterfly Print on depop for $18 and I’m obsessed. Styled it with dark baggy jeans and chunky sneakers for that ultimate early 2000s mall rat vibe. So good for everyday.
+
+0 model calls this session, 2 served from cache
 ```
 
 **The three tools, tested one at a time**
@@ -202,15 +230,15 @@ Can't write a fit card without an outfit.
 
 **Moment 1**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* I gave Claude the Milestone 5 task: open agent.py and fill in `run_agent()` following my branch rule from Milestone 2.
+- *What came back:* It decided on its own to parse the query with regex. It added `import re` and started sending several edits to agent.py at once. The assignment never asks for regex, and it leaves the parsing method up to me.
+- *What I changed:* I rejected those edits, asked why it was using regex, and told it to make one change at a time. When it asked how I wanted the query parsed, I picked string splitting. `_parse_query` now splits the query into words: the word after "size" is the size, and a "$" word or the number after "under"/"below" is the max price. I reviewed each change to agent.py on its own before accepting it.
 
 **Moment 2**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* I asked Claude to implement the three tools in tools.py from my Tool Inventory spec.
+- *What came back:* Its edits replaced the stub bodies but also deleted the starter's comments and docstrings around them.
+- *What I changed:* I rejected those edits and told it to leave the comments. It redid them, adding the code under the existing docstrings and comments so the starter's notes stay next to my implementation. Then I tested each tool on its own; those are the three per-tool tests in Sample Run.
 
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
