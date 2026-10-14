@@ -356,13 +356,25 @@ None of the three XL listings under $30 (lst_012 $20, plus the $22 flannel and $
 
 | # | Criterion | Target | Verdict | How I decided |
 |---|---|---|---|---|
-| 1 |  |  |  |  |
-| 2 |  |  |  |  |
-| 3 |  |  |  |  |
-| 4 |  |  |  |  |
-| 5 |  |  |  |  |
+| 1 | A matching query completes all three tools | 4 of 5 | MET (5/5) | All 5 tries reached `create_fit_card` and returned a real caption. None stopped early, crashed, or returned "Can't write a fit card without an outfit." 5 passes ≥ 4. |
+| 2 | An impossible query stops before the second tool | 5 of 5 | MET (5/5) | In all 5 traces, step 2 returned `[] (empty)`, the branch note says "stopping before suggest_outfit", there's no step 3, and the message names three things to change. 5 = 5. |
+| 3 | The item search found is the item the next two tools receive | 5 of 5 | MET (5/5) | In all 5 traces, the selected item is `search_results[0]` (`lst_002`), and the `suggest_outfit` and `create_fit_card` inputs both show `[lst_002] Y2K Baby Tee — Butterfly Print ($18.0, depop)`. 5 = 5. |
+| 4 | The fit card keeps the facts and the length | 4 of 5 | MET (5/5) | I checked each card against the exact rule: lengths 199, 168, 213, 164, 170 (all < 280), all contain `$18`, all contain `depop`. 5 passes ≥ 4. |
+| 5 | The search respects the size and price the user typed | 5 of 5 | MET (5/5) | All 5 parsed `size: 'L'`, `max_price: 30.0`. Every try returned the same 3 results (`lst_033 L $19`, `lst_006 L $24`, `lst_015 L $26`): at least one, all ≤ $30, all size L, no XL. 5 = 5. |
 
 **Diagnoses**
+
+**I missed nothing.** All five criteria met their target on the before run, so there's no miss to trace to a step. The honest question is whether my targets were too low.
+
+- **Criteria 2, 3 and 5 were never going to vary.** None of them touches the model. Parsing, `search_listings` and the session handoff are plain Python over a fixed 40-listing file, so 5 of 5 is the right target: one failure would mean a bug, not bad luck. But each was tested with **one query**. Criterion 5 only proves size `L` works. It says nothing about `S` (the `"s" in "us 9"` trap) or `M`.
+- **Criteria 1 and 4 cleared their 4-of-5 targets with room to spare.** In Unit 3 I set 4 of 5 to allow for a failed model call crashing a try. Two things removed that risk: the starter's rate limiter paced the run instead of failing, and Unit 4's `ModelUnavailable` handler turns a model failure into a message instead of a crash. The query `vintage graphic tee under $30` completed 15 of 15 times across the three scenarios that used it.
+- **Pattern:** every criterion was scored on a single query, and the three model-based checks all used the same item. The test proves the agent works for the Y2K Baby Tee. It doesn't prove it works for the catalog.
+
+**The criterion I'd tighten: #4, the fit card.** It ran 5 times on one item: the $18 Y2K Baby Tee on depop, a short whole-dollar price on a lowercase platform name. That's the easiest case for the rule I wrote. The longest card in the whole run (248 characters) came from a different item (`lst_033`, criterion 5's scenario), so the 280-character limit is closer than criterion 4's own scores (164–213) suggest. Tightened version: *for 5 different items, each fit card is under 280 characters and contains that item's own `$price` and platform — 5 of 5.*
+
+**Things I noticed that aren't criteria** (no verdict, but worth recording):
+- `suggest_outfit`'s format drifts between tries: `Outfit 1:`, `Outfit 1` with no colon, `- New Item:` bullets, `Style 1:` (empty wardrobe). Nothing downstream parses it yet, so it didn't fail anything.
+- `create_fit_card` sometimes shortens the title ("Vintage Band Tee" instead of "Vintage Band Tee — Faded Grey"), which is exactly why criterion 4 left the title out.
 
 
 
