@@ -240,6 +240,18 @@ Can't write a fit card without an outfit.
 - *What came back:* Its edits replaced the stub bodies but also deleted the starter's comments and docstrings around them.
 - *What I changed:* I rejected those edits and told it to leave the comments. It redid them, adding the code under the existing docstrings and comments so the starter's notes stay next to my implementation. Then I tested each tool on its own; those are the three per-tool tests in Sample Run.
 
+**Unit 4 — Moment 3**
+
+- *What I asked for:* I had Claude walk me through Unit 4 one step at a time, and asked it to add `trace.step()` calls to `run_agent()` in Milestone 2.
+- *What came back:* The first version passed the inputs as dicts, so the trace only printed `in: dict with keys: description, size, max_price`, not the actual values. Later, before the Milestone 3 run, Claude pointed out that the run log wouldn't contain the evidence for two of my criteria. Criterion 3 says the trace must show the item's title *and price* going into `suggest_outfit` and `create_fit_card`, but the trace showed only the title. Criterion 5 needs every result's size and price, but the log showed only the first item.
+- *What I changed:* I had the inputs passed as text so the values print. Before running the test, I approved a trace-only change: a `_item_label()` helper prints `[id] Title ($price, platform)`, and the search step lists every result's id, size and price. It changes only what's printed, not what the agent does, so it isn't my one improvement. Without it I would have been scoring criteria 3 and 5 on evidence that wasn't in the log.
+
+**Unit 4 — Moment 4**
+
+- *What I asked for:* After all five criteria came back MET, I asked Claude for options for the one improvement, and picked rewriting the `suggest_outfit` prompt to a fixed `Outfit / Pieces / Why` format.
+- *What came back:* Claude wrote `check_outfit_format.py` and scored the before log (0/25) *before* changing the prompt, so the measure couldn't be picked to flatter the result. After the re-run, the format went to 25/25. Claude also counted fit cards that say "listed/listing" and found 4/25 after vs 0/25 before, a side effect none of my criteria catch.
+- *What I changed:* I kept the improvement and reported the side effect instead of hiding it (The Improvement, What's Still Broken). I didn't fix it in the same unit, because a second prompt change would have broken the one-change rule. I also asked Claude to explain each milestone's changes and the reason for each before I committed, so I could check the work rather than just accept it.
+
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
      Don't fill these in during unit 3.
@@ -392,7 +404,7 @@ None of the three XL listings under $30 (lst_012 $20, plus the $22 flannel and $
      the same length, your branch isn't working — and this is the fastest way
      anyone will ever find that out. -->
 
-**Happy path** — `python app.py ask 'vintage graphic tee under $30' --trace`
+**Happy path** — `vintage graphic tee under $30`, final version of the agent (criterion 1, try 1 of `results/run_2026-10-13_1833_after.md`)
 
 ```
 [1] parse_query
@@ -401,15 +413,18 @@ None of the three XL listings under $30 (lst_012 $20, plus the $22 flannel and $
 [2] search_listings (via MCP)
       in:  {'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}
       out: 10 items: Y2K Baby Tee — Butterfly Print, Vintage Band Tee — Faded Grey, Graphic Tee — 2003 Tour Bootleg Style … +7 more
-      →    branch: found, selected Y2K Baby Tee — Butterfly Print
+      →    branch: found, selected [lst_002] Y2K Baby Tee — Butterfly Print ($18.0, depop)
+      results: lst_002 S/M $18 | lst_033 L $19 | lst_006 L $24 | lst_017 S/M $15 | lst_015 L $26 | lst_014 One Size (adjustable) $12 | lst_034 One Size $14 | lst_020 M $16 | lst_024 M $18 | lst_012 XL (fits oversized) $20
 [3] suggest_outfit
-      in:  {'new_item': 'Y2K Baby Tee — Butterfly Print', 'wardrobe_items': 10}
-      out: Outfit 1 New item: Y2K Baby Tee — Butterfly Print Wardrobe pieces: Baggy straight-leg jeans, dark wash; Chunky…
+      in:  new_item=[lst_002] Y2K Baby Tee — Butterfly Print ($18.0, depop), wardrobe_items=10
+      out: Outfit 1: Y2K Baby Tee — Butterfly Print Pieces: Baggy straight-leg jeans, dark wash; Chunky white sneakers; B…
 [4] create_fit_card
-      in:  {'outfit': 'Outfit 1\nNew item: Y2K Baby Tee — Butterfly Print\nWardrobe pieces: Baggy straight-leg jeans, dar…
-      out: Found this Y2K Baby Tee — Butterfly Print on depop for $18 and I’m obsessed. Styled it with dark baggy jeans a…
+      in:  new_item=[lst_002] Y2K Baby Tee — Butterfly Print ($18.0, depop), outfit='Outfit 1: Y2K Baby Tee — Butterfly P…
+      out: Found this Y2K Baby Tee — Butterfly Print and I’m obsessed. Snagged it on depop for just $18 so I had to style…
       →    done
 ```
+
+How to read it: step 2 is the MCP call. Its note shows the branch decision (found, so continue) and every result's id/size/price. Steps 3 and 4 both receive `[lst_002]`, the same item step 2 selected.
 
 **Empty search** — `python app.py ask 'purple wedding dress size 2 under $1' --trace`
 
@@ -509,6 +524,18 @@ It fixed what it targeted. Format consistency went from 0/25 to 25/25, empty-war
 <!-- For each criterion still missed: what you'd do, and why you stopped where
      you did. "I ran out of time" is fine if it's true. Pretending nothing is
      left is not. -->
+
+No criterion is still missed: all five were MET before and after. That doesn't mean nothing is broken. These are the problems I know about, most important first:
+
+1. **Fit cards sometimes say the user is selling the item (4/25 after my change, 0/25 before).** "Just listed it on depop" is wrong for someone who just bought it. Where: `tools.py::create_fit_card`, model output. Mechanism (likely): the new `suggest_outfit` format dropped the `New item:` label that used to tell the caption prompt this was a purchase. *What I'd do:* add one line to the `create_fit_card` prompt saying the poster just *bought* this item on the platform, then re-run and count seller-framed cards again. I'd also add a criterion for it, e.g. "no fit card says listed/listing/selling — 5 of 5". *Why I stopped:* the unit allows one improvement, and changing a second prompt in the same run would make it impossible to tell which change did what.
+
+2. **Criterion 4 only tested one item.** All 5 tries used the $18 Y2K Baby Tee on depop, the easiest case. *What I'd do:* the tightened version from my diagnosis, 5 different items, each card under 280 characters with its own `$price` and platform, 5 of 5. *Why I stopped:* that's a new criterion. It needs its own before run, and the unit's run logs had to stay comparable.
+
+3. **Criteria 3 and 5 rest on one query each.** Criterion 5 proves size `L` works but not `S` (the `"s" in "us 9"` trap) or `M`. *What I'd do:* add `S` and `M` scenarios. *Why I stopped:* same reason as #2, it would change the test set mid-unit.
+
+4. **An MCP failure isn't handled by the agent.** I added a handler for `ModelUnavailable`, but if the MCP server itself fails, `call_tool` raises `MCPError` and only `app.py`'s catch-all prints it. *What I'd do:* catch `MCPError` around the `search_listings` call in `run_agent()` and put a "search is unavailable, try again" message in `session["error"]`. *Why I stopped:* it wasn't one of the three required failure modes and I never saw it happen, so I prioritized the measured problems.
+
+5. **The trace prints on every run, not just with `--trace`.** `trace.step()` in the starter's `trace.py` always prints. Harmless, but noisy for a normal user. I left the starter file as it was.
 
 
 
