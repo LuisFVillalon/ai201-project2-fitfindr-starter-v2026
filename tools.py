@@ -197,12 +197,17 @@ def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
             "pieces, so give general styling advice. Never say or imply that "
             "the user already owns something."
         )
+        # Unit 4 improvement: one fixed format, so every suggestion reads the same.
         prompt = (
             f"Here is a thrifted item:\n{_describe_item(new_item)}\n\n"
-            "Suggest 1 to 3 ways to style it. For each, name the kinds of "
-            "pieces it pairs with (for example: straight-leg jeans, white "
-            "sneakers) and give one sentence on why they work together. "
-            "Plain text, no intro."
+            "Suggest 1 to 3 ways to style it. Use exactly this format for each, "
+            "three lines per outfit, with a blank line between outfits:\n\n"
+            f"Outfit 1: {new_item['title']}\n"
+            "Pieces: <kind of piece>; <kind of piece>; <kind of piece>\n"
+            "Why: <one sentence on why they work together>\n\n"
+            "Number the outfits Outfit 1, Outfit 2, Outfit 3. Name kinds of "
+            "pieces (for example: straight-leg jeans; white sneakers). No "
+            "bullets, no bold, no intro, nothing outside this format."
         )
         return generate(prompt, system=system)
 
@@ -222,13 +227,19 @@ def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
         "pieces in the user's wardrobe list, and refer to wardrobe pieces by "
         "their names exactly as written."
     )
+    # Unit 4 improvement: one fixed format, so every suggestion reads the same.
     prompt = (
         f"Here is a thrifted item the user is considering:\n"
         f"{_describe_item(new_item)}\n\n"
         f"Here is their wardrobe:\n" + "\n".join(pieces) + "\n\n"
-        "Suggest 1 to 3 outfits. For each, name the new item and the wardrobe "
-        "pieces it goes with, then give one sentence on why they work "
-        "together. Plain text, no intro."
+        "Suggest 1 to 3 outfits. Use exactly this format for each, three "
+        "lines per outfit, with a blank line between outfits:\n\n"
+        f"Outfit 1: {new_item['title']}\n"
+        "Pieces: <wardrobe piece name>; <wardrobe piece name>; ...\n"
+        "Why: <one sentence on why they work together>\n\n"
+        "Number the outfits Outfit 1, Outfit 2, Outfit 3. Write wardrobe "
+        "piece names exactly as listed. No bullets, no bold, no intro, "
+        "nothing outside this format."
     )
     return generate(prompt, system=system)
 

@@ -441,24 +441,64 @@ I registered `search_listings` in `mcp_server.py` with `@mcp.tool()` and typed i
 
      `python run_eval.py --label after` -->
 
-**What I changed:**
+**What I changed:** One prompt: the user prompt in `tools.py::suggest_outfit`, in both branches (wardrobe and empty wardrobe). The old prompt said "name the new item and the wardrobe pieces… one sentence on why… Plain text, no intro" and left the layout to the model. The new one spells out an exact three-line format per outfit and forbids bullets, bold and intros:
 
-**Which failure it was meant to fix:**
+```
+Outfit 1: <new item title>
+Pieces: <piece>; <piece>; <piece>
+Why: <one sentence on why they work together>
+```
+
+Pieces are separated by semicolons because some wardrobe names contain commas ("Baggy straight-leg jeans, dark wash"). The system prompts, the empty-wardrobe check and every other line of code are unchanged.
+
+**Which failure it was meant to fix:** No criterion missed, so this follows the side observation in my diagnosis: `suggest_outfit`'s layout drifted from try to try. Before I changed anything, I wrote the measure into `check_outfit_format.py`. A suggestion passes if every non-blank line starts with `Outfit N:`, `Pieces:` or `Why:`, the first line is `Outfit 1:`, and there are the same number (1–3) of each. On the before log it scored **0/25**. The 20 with-wardrobe suggestions mixed `Outfit 1` / `Outfit 1:` with `New item:` / `New Item:` / `- New Item:` bullets, and the 5 empty-wardrobe ones were headerless prose or `Style 1:`. The before score is 0 partly because the old prompt never asked for this format, so the real question was whether asking for it makes the output consistent.
 
 ### Run Log — After
 
+`results/run_2026-10-13_1833_after.md`, produced by `run_eval.py::main` (same 6 scenarios, 5 tries each, caching off, temperature 0.9, 50 model calls).
+
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| 1. A matching query completes all three tools | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. An impossible query stops before the second tool | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. The item search found is the item the next two tools receive | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. The fit card keeps the facts and the length | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. The search respects the size and price the user typed | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+
+**Side by side:**
+
+| Measure | Before | After |
+|---|---|---|
+| Criteria met | 5 of 5 | 5 of 5 |
+| Outfit suggestions in the fixed format (`check_outfit_format.py`) | **0/25** | **25/25** |
+| Criterion 4 fit card lengths | 199, 168, 213, 164, 170 | 184, 188, 194, 167, 162 |
+| Fit cards that describe the user as the **seller** ("listed it on depop") | **0/25** | **4/25** |
+
+Real output, criterion 4 try 1, `tools.py::suggest_outfit` then `tools.py::create_fit_card`:
+
+```
+Outfit 1: Y2K Baby Tee — Butterfly Print
+Pieces: Baggy straight-leg jeans, dark wash; Chunky white sneakers; Black crossbody bag
+Why: The dark wash denim anchors the playful pastel graphic for an effortless, street-smart Y2K look.
+
+Outfit 2: Y2K Baby Tee — Butterfly Print
+Pieces: Wide-leg khaki trousers; Brown leather belt; Chunky white sneakers
+Why: The khaki trousers and brown belt balance the fitted tee with relaxed, earthy tones.
+
+Outfit 3: Y2K Baby Tee — Butterfly Print
+Pieces: Vintage black denim jacket; Baggy straight-leg jeans, dark wash; Black combat boots
+Why: The black denim jacket and combat boots add an edgy contrast to the soft butterfly graphics.
+
+Fit card:
+Obsessed with this Y2K Baby Tee — Butterfly Print for $18. Styled it with wide-leg khakis and a leather belt for the ultimate earthy, low-key fit. Listing this beauty on depop tonight!
+```
 
 **Did it help, and how do I know:**
 
 <!-- If it made things worse, say that. Honestly reported, that earns full
      credit and is more interesting than one that worked. -->
+
+It fixed what it targeted. Format consistency went from 0/25 to 25/25, empty-wardrobe runs included, and all five criteria stayed MET, so nothing I was measuring got worse. But it likely caused a side effect that none of my criteria catch. In 4 of the 25 after cards, `create_fit_card` framed the user as **selling** the item ("Just listed it on depop", "before I list it on depop", "Got it listed on depop", and the "Listing this beauty on depop tonight!" card above). The before run had 0 of 25. My best explanation: the old outfit text almost always opened with `New item: <title>`, which told `create_fit_card` the item was a new purchase. The new format drops the words "New item", so the caption prompt has one less cue about who bought what. Those cards still pass criterion 4, because the price and platform are there, which shows that criterion checks the facts are *present*, not that they're *used correctly*. 4 of 25 is a small sample, so I'd treat it as a likely cause, not a proven one.
 
 
 
