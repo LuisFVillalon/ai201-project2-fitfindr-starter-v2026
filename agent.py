@@ -131,6 +131,11 @@ def _no_results_message(parsed: dict) -> str:
     return f"No listings matched {searched}. Try {tries}."
 
 
+def _item_label(item: dict) -> str:
+    """How the trace names an item: id, title, price and platform."""
+    return f"[{item.get('id')}] {item.get('title')} (${item.get('price')}, {item.get('platform')})"
+
+
 def _model_unavailable_message(item: dict, exc: Exception) -> str:
     """
     The model-unavailable message: the search still worked, so name the item
@@ -234,15 +239,21 @@ def run_agent(query: str, wardrobe: dict) -> dict:
             else:
                 session["selected_item"] = session["search_results"][0]
                 next_step = "suggest_outfit"
-                note = f"branch: found, selected {session['selected_item']['title']}"
+                note = f"branch: found, selected {_item_label(session['selected_item'])}"
+                # Every result's id, size and price, so criterion 5 can be scored from the trace.
+                note += "\n      results: " + " | ".join(
+                    f"{r.get('id')} {r.get('size')} ${r.get('price'):g}"
+                    for r in session["search_results"]
+                )
             trace.step("search_listings (via MCP)", inputs=str(search_args),
                        returned=session["search_results"], note=note)
 
         elif next_step == "suggest_outfit":
-            outfit_inputs = {
-                "new_item": session["selected_item"]["title"],
-                "wardrobe_items": len(session["wardrobe"].get("items", [])),
-            }
+            # Item first, so the trace's line limit never cuts off the price.
+            outfit_inputs = (
+                f"new_item={_item_label(session['selected_item'])}, "
+                f"wardrobe_items={len(session['wardrobe'].get('items', []))}"
+            )
             try:
                 session["outfit_suggestion"] = suggest_outfit(
                     session["selected_item"], session["wardrobe"]
@@ -257,10 +268,10 @@ def run_agent(query: str, wardrobe: dict) -> dict:
                            note=f"model unavailable, stopping: {exc}")
 
         elif next_step == "create_fit_card":
-            card_inputs = {
-                "outfit": session["outfit_suggestion"],
-                "new_item": session["selected_item"]["title"],
-            }
+            card_inputs = (
+                f"new_item={_item_label(session['selected_item'])}, "
+                f"outfit={session['outfit_suggestion']!r}"
+            )
             try:
                 session["fit_card"] = create_fit_card(
                     session["outfit_suggestion"], session["selected_item"]

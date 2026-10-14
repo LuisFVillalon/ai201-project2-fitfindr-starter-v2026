@@ -260,18 +260,79 @@ Can't write a fit card without an outfit.
 
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| 1. A matching query completes all three tools | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. An impossible query stops before the second tool | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. The item search found is the item the next two tools receive | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. The fit card keeps the facts and the length | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. The search respects the size and price the user typed | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+
+Full log: `results/run_2026-10-13_1817_before.md`, produced by `run_eval.py::main`
+(5 tries per scenario, caching off, temperature 0.9, 50 model calls). The
+empty-wardrobe scenario also ran 5 times as a diagnostic (5/5 completed with
+general advice) but isn't one of my five criteria.
 
 **Real output from one try**, pasted as text, naming the file and function
 that produced it:
 
-```
+**Criterion 1** — try 1, `agent.py::run_agent` (fit card from `tools.py::create_fit_card`):
 
 ```
+- stopped early: no
+- selected_item: Y2K Baby Tee — Butterfly Print ($18.0, depop)
+- search_results: 10
+
+Fit card:
+Manifesting spring with this Y2K Baby Tee — Butterfly Print. Snagged it on depop for just $18 and it’s giving major 2000s mall rat energy paired with baggy denim.
+```
+
+**Criterion 2** — try 1, `agent.py::run_agent` (message from `agent.py::_no_results_message`):
+
+```
+[1] parse_query
+      in:  designer ballgown size XXS under $5
+      out: {'description': 'designer ballgown', 'size': 'XXS', 'max_price': 5.0}
+[2] search_listings (via MCP)
+      in:  {'description': 'designer ballgown', 'size': 'XXS', 'max_price': 5.0}
+      out: [] (empty)
+      →    branch: empty, stopping before suggest_outfit
+
+stopped early: yes — No listings matched "designer ballgown" in size XXS under $5. Try a max price higher than $5, a different size or no size, or fewer or broader keywords.
+```
+
+**Criterion 3** — try 1, trace from `agent.py::run_agent` via `trace.py::step`:
+
+```
+[2] search_listings (via MCP)
+      →    branch: found, selected [lst_002] Y2K Baby Tee — Butterfly Print ($18.0, depop)
+      results: lst_002 S/M $18 | lst_033 L $19 | lst_006 L $24 | ...
+[3] suggest_outfit
+      in:  new_item=[lst_002] Y2K Baby Tee — Butterfly Print ($18.0, depop), wardrobe_items=10
+[4] create_fit_card
+      in:  new_item=[lst_002] Y2K Baby Tee — Butterfly Print ($18.0, depop), outfit='Outfit 1:\nNew item: Y2K Baby Tee— …
+```
+
+**Criterion 4** — try 1, `tools.py::create_fit_card` (199 characters, contains `$18` and `depop`):
+
+```
+Just scored this Y2K Baby Tee — Butterfly Print on depop for $18. Obsessed with how the pastel graphics look paired with baggy dark wash jeans and chunky sneakers for that ultimate 2000s street vibe.
+```
+
+Lengths across the 5 tries: 199, 168, 213, 164, 170. All under 280, and all contain `$18` and `depop`.
+
+**Criterion 5** — try 1, `agent.py::_parse_query` + `tools.py::search_listings` (via MCP):
+
+```
+[1] parse_query
+      in:  graphic tee size L under $30
+      out: {'description': 'graphic tee', 'size': 'L', 'max_price': 30.0}
+[2] search_listings (via MCP)
+      in:  {'description': 'graphic tee', 'size': 'L', 'max_price': 30.0}
+      out: 3 items: Vintage Band Tee — Faded Grey, Graphic Tee — 2003 Tour Bootleg Style, Vintage Graphic Hoodie — Faded Black
+      →    branch: found, selected [lst_033] Vintage Band Tee — Faded Grey ($19.0, depop)
+      results: lst_033 L $19 | lst_006 L $24 | lst_015 L $26
+```
+
+None of the three XL listings under $30 (lst_012 $20, plus the $22 flannel and $21 crewneck) showed up in any of the 5 tries.
 
 ---
 

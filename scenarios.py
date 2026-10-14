@@ -47,6 +47,27 @@ SCENARIOS = [
     # For a fit-card criterion, you probably want the SAME query listed more
     # than once, or several different items, depending on what your criterion
     # actually says.
+    {
+        # The item search found is the item the next two tools receive. Criterion 3.
+        "name": "selected item is passed on",
+        "query": "vintage graphic tee under $30",
+        "wardrobe": "example",
+        "criterion": 3,
+    },
+    {
+        # Same query 5 times: fit card under 280 chars, has $price and platform. Criterion 4.
+        "name": "fit card keeps price, platform, length",
+        "query": "vintage graphic tee under $30",
+        "wardrobe": "example",
+        "criterion": 4,
+    },
+    {
+        # Size L and $30 are hard limits — the XL listings under $30 are the trap. Criterion 5.
+        "name": "search respects size and price",
+        "query": "graphic tee size L under $30",
+        "wardrobe": "example",
+        "criterion": 5,
+    },
 ]
 
 WARDROBES = ("example", "empty")
