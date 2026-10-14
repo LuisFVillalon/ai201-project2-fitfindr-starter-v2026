@@ -17,6 +17,7 @@ import config
 import trace
 from tools import search_listings, suggest_outfit, create_fit_card
 from generate import ModelUnavailable
+from mcp_client import call_tool
 
 
 # ── session state ─────────────────────────────────────────────────────────────
@@ -203,11 +204,12 @@ def run_agent(query: str, wardrobe: dict) -> dict:
             next_step = "search_listings"
 
         elif next_step == "search_listings":
-            session["search_results"] = search_listings(
-                description=session["parsed"]["description"],
-                size=session["parsed"]["size"],
-                max_price=session["parsed"]["max_price"],
-            )
+            # Unit 4: search_listings now runs through the MCP server.
+            session["search_results"] = call_tool("search_listings", {
+                "description": session["parsed"]["description"],
+                "size": session["parsed"]["size"],
+                "max_price": session["parsed"]["max_price"],
+            })
 
             # THE BRANCH: nothing found means stop here, before suggest_outfit.
             if not session["search_results"]:
