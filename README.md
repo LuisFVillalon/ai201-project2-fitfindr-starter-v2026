@@ -319,23 +319,44 @@ that produced it:
      the same length, your branch isn't working — and this is the fastest way
      anyone will ever find that out. -->
 
-**Happy path**
+**Happy path** — `python app.py ask 'vintage graphic tee under $30' --trace`
 
 ```
-
+[1] parse_query
+      in:  vintage graphic tee under $30
+      out: {'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}
+[2] search_listings (via MCP)
+      in:  {'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}
+      out: 10 items: Y2K Baby Tee — Butterfly Print, Vintage Band Tee — Faded Grey, Graphic Tee — 2003 Tour Bootleg Style … +7 more
+      →    branch: found, selected Y2K Baby Tee — Butterfly Print
+[3] suggest_outfit
+      in:  {'new_item': 'Y2K Baby Tee — Butterfly Print', 'wardrobe_items': 10}
+      out: Outfit 1 New item: Y2K Baby Tee — Butterfly Print Wardrobe pieces: Baggy straight-leg jeans, dark wash; Chunky…
+[4] create_fit_card
+      in:  {'outfit': 'Outfit 1\nNew item: Y2K Baby Tee — Butterfly Print\nWardrobe pieces: Baggy straight-leg jeans, dar…
+      out: Found this Y2K Baby Tee — Butterfly Print on depop for $18 and I’m obsessed. Styled it with dark baggy jeans a…
+      →    done
 ```
 
-**Empty search**
+**Empty search** — `python app.py ask 'purple wedding dress size 2 under $1' --trace`
 
 ```
-
+[1] parse_query
+      in:  purple wedding dress size 2 under $1
+      out: {'description': 'purple wedding dress', 'size': '2', 'max_price': 1.0}
+[2] search_listings (via MCP)
+      in:  {'description': 'purple wedding dress', 'size': '2', 'max_price': 1.0}
+      out: [] (empty)
+      →    branch: empty, stopping before suggest_outfit
 ```
+
+The empty-search trace stops at step 2, two steps shorter than the happy path, so the branch is working.
 
 **On the MCP move:** <!-- what changed in your code, and whether anything
 behaved differently afterwards. If the rewire didn't work, say exactly where it
 broke — the error text and the last thing that worked. That earns the point in
 full. -->
-
+I registered `search_listings` in `mcp_server.py` with `@mcp.tool()` and typed inputs (`description: str`, `size: str | None`, `max_price: float | None`) that match my Tool Inventory. Then in `run_agent()` (`agent.py`) I replaced the direct `search_listings(...)` call with `call_tool("search_listings", {...})` from `mcp_client.py`. `python mcp_client.py` listed the tool with all three inputs. Nothing behaved differently afterwards: `'vintage graphic tee under $30'` returned the same top item (Y2K Baby Tee — Butterfly Print, $18.0) through MCP as it did with the direct call, and the empty search still returned `[]`.
 
 
 ---
