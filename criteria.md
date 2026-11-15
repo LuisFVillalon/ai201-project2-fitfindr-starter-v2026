@@ -143,3 +143,60 @@ so an empty result can't pass by default.
      A number you missed stays where it is, gets diagnosed, and gets a fix
      attempted. That's where the points are.
      ───────────────────────────────────────────────────────────────────────── -->
+
+---
+
+# Capstone criteria (Unit 9)
+
+<!-- Written before any capstone trial runs. Committed as "add capstone criteria".
+
+     Rules (from the Unit 9 brief):
+       • five numbered criteria, each with a TARGET (a number, a rate, or
+         something a person could plainly see) — not "works", "reliable",
+         "good" or "fast"
+       • at least 3 about the extension (the log, the rate limit, the run
+         path, the cost), not the agent as it already worked
+       • at least 1 about the bad path (an error, a timeout, an empty
+         result, or a bad input)
+       • under each, why THAT target and not a stricter or looser one,
+         tied to this system or to what being wrong would cost
+       • if one is revised later: leave the original line, put the new one
+         underneath with the reason. Never delete the original. -->
+
+## 1. Successful responses logged
+
+**Target:** 3 out of 3 requests with a non-empty query each leave exactly one row in logs/requests.jsonl with a status 200.
+
+**Why this target:** We want to make sure every single input and output is recorded to measure accurately the token costs per session.
+
+---
+
+## 2. Monitoring cost and time of refusals
+
+**Target:** While another user's request is running the agent, 3 of 3 requests from a user already over the per-minute limit get a 429 in under 500 ms (measured by duration_ms in the log ), with null tokens used.
+
+**Why this target:** Refused requests should not spend tokens, so tha the limit actually saves money.  We set it at 500 ms because a correct refusal takes about 0 ms, while a refusal stuck behind another user's run would wait up to 3,100 ms, so 500 ms is a good fit. A refused user shouldn't have to wait 3,100 ms just to be told no.
+
+---
+
+## 3. Refused requests logged
+
+**Target:** 3 of 3 bad requests (a query with no characters, a query with only whitespace, the query is a number, not text) each get a 400 response and leave exactly one line in logs/requests.jsonl with http_status 400.
+
+**Why this target:** We want to make sure to let the user know if their response is not being generated is because they are inputting an in valid request not because the server is down.
+
+---
+
+## 4. Monitoring cost of runs
+
+**Target:** With the cache off and the default 10-item wardrobe, 3 of 3 complete runs each cost less than $0.0016, calculated from that run's prompt_tokens × $0.30 per 1M plus output_tokens × $2.50 per 1M in logs/requests.jsonl.
+
+**Why this target:** In my cost measurement, runs cost between $0.000761 and $0.000906, so $0.0016 is about 2× the normal run ($0.000824). That leaves room for prompt tokens ranging from 808-886 and output tokens ranging from 207-256, but a run would cross if more than four or more model calls are made in one run (a bug).
+
+---
+
+## 5. Starting FitFindr from RUNNING.md alone
+
+**Target:** In 3 of 3 fresh clones (new folder, new terminal, no .venv active), following only RUNNING.md, 0 undocumented steps are needed, and each ends with test.py passing, /health returning ok, one /ask returning 200, and logs/requests.jsonl holding exactly 1 line.
+
+**Why this target:** Path B requires that any other person can reproduce this project. Step 8's first clean-clone attempt failed because I ran serve.py before activating .venv and running pip install -r requirements.txt. A troubleshooting row was added to the troubleshooting table explaining the No module named 'flask' error. We aim for 0 undocumented steps because one undocumented step is enough to stop a new reader completely. 
