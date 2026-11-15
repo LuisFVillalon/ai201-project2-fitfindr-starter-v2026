@@ -599,3 +599,96 @@ FitFindr, my Project 2 agent (Units 3–4). The agent itself is unchanged: it st
 **Out of scope:** I'm not changing the agent, the three tools or their prompts. I'm not fixing the seller-framing fit cards from Unit 4's What's Still Broken. I'm not adding a queue or concurrent workers: `serve.py` stays one request at a time.
 
 **Stretch (named before starting):** a load observation. I'll send requests at 10× my normal rate and report what changed: how many got through, how many were rate-limited, and how fast the refusals came back.
+
+**Running It**
+
+**Path B: local with logs.** FitFindr runs on my machine (Windows 11, PowerShell 7.4, Python 3.12.3), started by one command:
+
+```powershell
+python serve.py
+```
+
+Everything else is in [RUNNING.md](RUNNING.md) under **Capstone run path — Path B**: the environment (exact package versions, no model files, since the model runs at Google), setup from a clean checkout, how to turn the cache off for measuring, example requests, what each status code means, and where the log goes.
+
+I tested RUNNING.md by cloning the repo into a new folder and following it. The first attempt failed: I ran `python serve.py` before activating the new copy's `.venv` and got `ModuleNotFoundError: No module named 'flask'`. The setup steps were right, but nothing explained that error, so I added it (and PowerShell's "running scripts is disabled" error) to RUNNING.md's troubleshooting table. After setup, the fresh copy passed `test.py` (10 passed), answered `/health` and `/ask` (200), and created `logs/requests.jsonl` from nothing.
+
+The committed run record is [logs/requests.jsonl](logs/requests.jsonl): one real session, pasted in full below.
+
+**Instrumentation**
+
+Every request to `POST /ask` writes one JSON line to `logs/requests.jsonl`. That includes requests that are refused (400, 429) or crash (500). `request_log.py::log_request` writes the line, and `serve.py::ask` calls it on every way out of the route. Every line has the same 13 fields, so a field that didn't apply is `null` rather than missing:
+
+| Field | What it holds |
+|---|---|
+| `timestamp` | When the line was written, i.e. when the request finished. UTC, to the millisecond |
+| `event` | `ask` (the agent ran), `rejected` (400 or 429, agent never ran) or `error` (the agent raised, 500) |
+| `user_id` | Who asked: the body's `user_id`, or `ip:<address>` when there isn't one. The rate limit counts by this same value |
+| `query` | What they sent, exactly. For a bad body it's whatever was in `query`, even `null` |
+| `http_status` | What `/ask` answered: 200, 400, 429 or 500 |
+| `duration_ms` | Request start to response, including any time waiting for `serve.py`'s one-at-a-time lock |
+| `parsed` | `agent.py::_parse_query`'s description / size / max_price |
+| `result_count` | How many listings `search_listings` returned |
+| `selected_item_id` | The listing the agent picked (look it up in `data/listings.json`) |
+| `stopped_early` | `true` if the agent ended with a message instead of a fit card (no match, or model unavailable) |
+| `error` | The agent's `session["error"]`, or why the request was refused (`missing_query`, `rate_limited`) or crashed |
+| `prompt_tokens`, `output_tokens` | Tokens THIS request used, the difference in `generate.token_counts()` before and after `run_agent()` |
+
+A 429 line also carries `limit` (which limit was hit) and `retry_after_s` (seconds until the caller can try again).
+
+**The session below, in full (18 entries):** 10 cost-measurement runs (`measure_cost.py`, cache off), then two bad bodies, then six rapid requests from one caller. No request crashed (no 500) in this session. The failed and refused runs are entries 11, 12 and 18.
+
+```json
+{"timestamp": "2026-11-15T07:43:34.357+00:00", "event": "ask", "user_id": "cost_20261114_234325", "query": "vintage graphic tee under $30", "http_status": 200, "duration_ms": 6576, "parsed": {"description": "vintage graphic tee", "size": null, "max_price": 30.0}, "result_count": 10, "selected_item_id": "lst_002", "stopped_early": false, "error": null, "prompt_tokens": 830, "output_tokens": 218}
+{"timestamp": "2026-11-15T07:43:44.469+00:00", "event": "ask", "user_id": "cost_20261114_234325", "query": "denim jacket size M", "http_status": 200, "duration_ms": 3751, "parsed": {"description": "denim jacket", "size": "M", "max_price": null}, "result_count": 4, "selected_item_id": "lst_038", "stopped_early": false, "error": null, "prompt_tokens": 847, "output_tokens": 245}
+{"timestamp": "2026-11-15T07:43:56.827+00:00", "event": "ask", "user_id": "cost_20261114_234325", "query": "black combat boots", "http_status": 200, "duration_ms": 3094, "parsed": {"description": "black combat boots", "size": null, "max_price": null}, "result_count": 8, "selected_item_id": "lst_026", "stopped_early": false, "error": null, "prompt_tokens": 808, "output_tokens": 214}
+{"timestamp": "2026-11-15T07:44:10.551+00:00", "event": "ask", "user_id": "cost_20261114_234325", "query": "oversized crewneck sweatshirt under $25", "http_status": 200, "duration_ms": 3808, "parsed": {"description": "oversized crewneck sweatshirt", "size": null, "max_price": 25.0}, "result_count": 4, "selected_item_id": "lst_012", "stopped_early": false, "error": null, "prompt_tokens": 845, "output_tokens": 243}
+{"timestamp": "2026-11-15T07:44:23.648+00:00", "event": "ask", "user_id": "cost_20261114_234325", "query": "leather belt", "http_status": 200, "duration_ms": 3877, "parsed": {"description": "leather belt", "size": null, "max_price": null}, "result_count": 4, "selected_item_id": "lst_014", "stopped_early": false, "error": null, "prompt_tokens": 817, "output_tokens": 210}
+{"timestamp": "2026-11-15T07:44:36.184+00:00", "event": "ask", "user_id": "cost_20261114_234325", "query": "band tee size L", "http_status": 200, "duration_ms": 3430, "parsed": {"description": "band tee", "size": "L", "max_price": null}, "result_count": 2, "selected_item_id": "lst_033", "stopped_early": false, "error": null, "prompt_tokens": 811, "output_tokens": 207}
+{"timestamp": "2026-11-15T07:44:49.183+00:00", "event": "ask", "user_id": "cost_20261114_234325", "query": "flannel shirt under $40", "http_status": 200, "duration_ms": 3390, "parsed": {"description": "flannel shirt", "size": null, "max_price": 40.0}, "result_count": 3, "selected_item_id": "lst_003", "stopped_early": false, "error": null, "prompt_tokens": 886, "output_tokens": 256}
+{"timestamp": "2026-11-15T07:45:02.600+00:00", "event": "ask", "user_id": "cost_20261114_234325", "query": "bucket hat", "http_status": 200, "duration_ms": 3806, "parsed": {"description": "bucket hat", "size": null, "max_price": null}, "result_count": 1, "selected_item_id": "lst_034", "stopped_early": false, "error": null, "prompt_tokens": 861, "output_tokens": 251}
+{"timestamp": "2026-11-15T07:45:15.108+00:00", "event": "ask", "user_id": "cost_20261114_234325", "query": "mesh long-sleeve top size S", "http_status": 200, "duration_ms": 3301, "parsed": {"description": "mesh long-sleeve top", "size": "S", "max_price": null}, "result_count": 2, "selected_item_id": "lst_017", "stopped_early": false, "error": null, "prompt_tokens": 824, "output_tokens": 221}
+{"timestamp": "2026-11-15T07:45:27.982+00:00", "event": "ask", "user_id": "cost_20261114_234325", "query": "vintage polo shirt", "http_status": 200, "duration_ms": 3169, "parsed": {"description": "vintage polo shirt", "size": null, "max_price": null}, "result_count": 10, "selected_item_id": "lst_024", "stopped_early": false, "error": null, "prompt_tokens": 839, "output_tokens": 225}
+{"timestamp": "2026-11-15T07:49:19.773+00:00", "event": "rejected", "user_id": "demo", "query": "   ", "http_status": 400, "duration_ms": 0, "parsed": null, "result_count": null, "selected_item_id": null, "stopped_early": null, "error": "missing_query", "prompt_tokens": null, "output_tokens": null}
+{"timestamp": "2026-11-15T07:49:24.979+00:00", "event": "rejected", "user_id": "ip:127.0.0.1", "query": null, "http_status": 400, "duration_ms": 0, "parsed": null, "result_count": null, "selected_item_id": null, "stopped_early": null, "error": "missing_query", "prompt_tokens": null, "output_tokens": null}
+{"timestamp": "2026-11-15T07:49:32.253+00:00", "event": "ask", "user_id": "demo", "query": "designer ballgown size XXS under $5", "http_status": 200, "duration_ms": 1302, "parsed": {"description": "designer ballgown", "size": "XXS", "max_price": 5.0}, "result_count": 0, "selected_item_id": null, "stopped_early": true, "error": "No listings matched \"designer ballgown\" in size XXS under $5. Try a max price higher than $5, a different size or no size, or fewer or broader keywords.", "prompt_tokens": 0, "output_tokens": 0}
+{"timestamp": "2026-11-15T07:49:33.745+00:00", "event": "ask", "user_id": "demo", "query": "designer ballgown size XXS under $5", "http_status": 200, "duration_ms": 1248, "parsed": {"description": "designer ballgown", "size": "XXS", "max_price": 5.0}, "result_count": 0, "selected_item_id": null, "stopped_early": true, "error": "No listings matched \"designer ballgown\" in size XXS under $5. Try a max price higher than $5, a different size or no size, or fewer or broader keywords.", "prompt_tokens": 0, "output_tokens": 0}
+{"timestamp": "2026-11-15T07:49:35.237+00:00", "event": "ask", "user_id": "demo", "query": "designer ballgown size XXS under $5", "http_status": 200, "duration_ms": 1243, "parsed": {"description": "designer ballgown", "size": "XXS", "max_price": 5.0}, "result_count": 0, "selected_item_id": null, "stopped_early": true, "error": "No listings matched \"designer ballgown\" in size XXS under $5. Try a max price higher than $5, a different size or no size, or fewer or broader keywords.", "prompt_tokens": 0, "output_tokens": 0}
+{"timestamp": "2026-11-15T07:49:36.641+00:00", "event": "ask", "user_id": "demo", "query": "designer ballgown size XXS under $5", "http_status": 200, "duration_ms": 1168, "parsed": {"description": "designer ballgown", "size": "XXS", "max_price": 5.0}, "result_count": 0, "selected_item_id": null, "stopped_early": true, "error": "No listings matched \"designer ballgown\" in size XXS under $5. Try a max price higher than $5, a different size or no size, or fewer or broader keywords.", "prompt_tokens": 0, "output_tokens": 0}
+{"timestamp": "2026-11-15T07:49:38.048+00:00", "event": "ask", "user_id": "demo", "query": "designer ballgown size XXS under $5", "http_status": 200, "duration_ms": 1169, "parsed": {"description": "designer ballgown", "size": "XXS", "max_price": 5.0}, "result_count": 0, "selected_item_id": null, "stopped_early": true, "error": "No listings matched \"designer ballgown\" in size XXS under $5. Try a max price higher than $5, a different size or no size, or fewer or broader keywords.", "prompt_tokens": 0, "output_tokens": 0}
+{"timestamp": "2026-11-15T07:49:38.286+00:00", "event": "rejected", "user_id": "demo", "query": "designer ballgown size XXS under $5", "http_status": 429, "duration_ms": 0, "parsed": null, "result_count": null, "selected_item_id": null, "stopped_early": null, "error": "rate_limited", "prompt_tokens": null, "output_tokens": null, "limit": "5 per minute", "retry_after_s": 53}
+```
+
+How to read it:
+
+- **Entries 11 and 12 are rejected inputs.** 11 is a blank query. 12 is a body that's a JSON list (`[1, 2]`) instead of an object. In the starter, that body crashed the route with a 500 that left no record. Now it's a logged 400, and with no `user_id` it's counted by IP.
+- **Entry 18 is the 6th request from `demo` inside a minute.** It's refused in **0 ms** with no tokens, because the limit is checked before `serve.py`'s lock and the agent never runs. Entries 13–17 are the 5 that were allowed.
+- **Entry 1 took 6,576 ms; entries 2–10 took 3,094–3,877 ms.** The first request after the server starts pays for setting up the model client.
+
+One gap I know about: **`prompt_tokens: 0` means more than one thing.** In entries 13–17 it means the agent stopped before the model. But with the cache on, a complete run whose answer came from `.cache/` also logs 0, and I saw exactly that while testing (a fit-card run logged 0 tokens in 2,323 ms). Nothing in the line tells those apart. For this session the cache was off, so every complete run's tokens are real.
+
+**What It Costs**
+
+**$0.000824 per run**: the average of 10 complete runs (entries 1–10 above), on 10 different items.
+
+| | Average per run | Price ([Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricing), gemini-3.5-flash-lite, paid tier) | Cost |
+|---|---|---|---|
+| Prompt tokens | 836.8 | $0.30 per 1M | $0.000251 |
+| Output tokens | 229.0 | $2.50 per 1M | $0.000572 |
+| **Total** | **1,065.8 tokens** | | **$0.000824** |
+
+Average time per run: 3,820 ms (3,514 ms without the first, cold request).
+
+**How I measured it.** `measure_cost.py` sent 10 different matching queries to the running server, with the cache off (`AI201_CACHE=0`) and 13 seconds apart so my own 5-per-minute limit wouldn't refuse the 6th. It then read each request's `prompt_tokens` and `output_tokens` back from `logs/requests.jsonl`. Those come from `generate.py`, which reads them from the API's own `usage_metadata` on every response. `serve.py` takes the difference before and after each run. I averaged the 10 and multiplied by the per-token price. I checked that this model reports `thoughts_token_count: None` (total = prompt + output), so no hidden "thinking" tokens are left out of the count. The runs ranged from $0.000761 to $0.000906, because the prompt is mostly the same 10-item wardrobe every time.
+
+**What I actually paid was $0.** My key is on Gemini's free tier. $0.000824 is what these same tokens cost on the paid tier.
+
+**A hundred people a day**, one run each:
+
+```
+$0.000824 × 100 runs     = $0.0824 per day
+$0.0824   × 30 days      = $2.47 per month
+```
+
+Output is 21% of the tokens but 69% of the cost ($0.000572 of $0.000824), because it's priced over 8× higher than input. Shorter outfit suggestions would cut cost more than shorter prompts.
+
+**What the rate limit does to the worst case.** If all 100 people used their full 30 a day, that would be `$0.000824 × 100 × 30 = $2.47 per day`. In practice the server can't get there: `generate.py`'s `SESSION_REQUEST_BUDGET` is 300 model calls, and each run is 2, so a server stops after about 150 runs (about $0.12) until it's restarted. So the two limits do different jobs. My per-caller limit keeps any one caller to 30 runs a day, a fifth of what the server can do. The starter's session budget caps what the whole server can spend.
