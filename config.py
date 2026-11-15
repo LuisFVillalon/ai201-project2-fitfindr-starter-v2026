@@ -86,6 +86,25 @@ REQUESTS_PER_MINUTE = 15
 SESSION_REQUEST_BUDGET = 300
 MAX_RETRIES = 5
 
+# ─── Per-caller limit on serve.py's /ask ← UNIT 9 (capstone) ──────────────────
+# The limits above pace calls to the MODEL, for the whole server. These limit
+# how many /ask requests one CALLER (user_id, or IP if there isn't one) can
+# make. Different names on purpose: REQUESTS_PER_MINUTE already means
+# something else.
+#
+# Why 5 a minute: one agent run takes about 8 seconds and serve.py runs one at
+# a time, so the server can't do more than ~7 runs a minute anyway. A person
+# rewording a search ("graphic tee" → "band tee size L") might fire 3–4 in a
+# minute; 5 leaves them room. It stops one caller from taking every slot.
+#
+# Why 30 a day: each run is two model calls, and SESSION_REQUEST_BUDGET is
+# 300 calls, so the whole server gets ~150 runs before it stops. 30 is plenty
+# for one person thrifting, and means no single caller can use up more than a
+# fifth of that budget.
+
+HTTP_LIMIT_PER_MINUTE = 5
+HTTP_LIMIT_PER_DAY = 30
+
 CACHE_DIR = ROOT / ".cache"
 
 
