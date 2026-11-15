@@ -576,3 +576,26 @@ No criterion is still missed: all five were MET before and after. That doesn't m
 ---
 
 📖 **How to run this project: [RUNNING.md](RUNNING.md)**
+
+---
+
+## Capstone
+
+<!-- Unit 9. Every capstone section lives under this heading, written as a
+     bold label (not a ### heading), so it stays separate from the Unit 3/4
+     sections above that share some of the same names. -->
+
+**What This Extends**
+
+FitFindr, my Project 2 agent (Units 3–4). The agent itself is unchanged: it still parses the query, searches the 40 listings over MCP, suggests outfits and writes a fit card. What's new is the layer around it when it runs as a web service (`serve.py`, `POST /ask`):
+
+1. **A structured request log.** Every request to `/ask`, including rejected and failed ones, writes one JSON record to `logs/requests.jsonl` with named fields: timestamp, who asked, the query, what the agent selected or why it stopped, the HTTP status, how long it took, and the tokens it used.
+2. **A per-user rate limit.** Each caller (by `user_id`, or by IP address when there isn't one) gets a fixed number of requests per minute and per day. Past that, `/ask` returns a `429` right away, without calling the model, and the rejection is logged.
+
+**The Shape**
+
+**Shape A: Deploy and instrument.** The extension is the operational layer: a documented way to start FitFindr as a service, a log that records what every request did, a cost-per-run number measured from that log, and a rate limit that caps what one caller can cost me.
+
+**Out of scope:** I'm not changing the agent, the three tools or their prompts. I'm not fixing the seller-framing fit cards from Unit 4's What's Still Broken. I'm not adding a queue or concurrent workers: `serve.py` stays one request at a time.
+
+**Stretch (named before starting):** a load observation. I'll send requests at 10× my normal rate and report what changed: how many got through, how many were rate-limited, and how fast the refusals came back.
