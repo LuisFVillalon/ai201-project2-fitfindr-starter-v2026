@@ -329,6 +329,8 @@ is the most common architectural failure in production agents.
 | What you see | What it means |
 |---|---|
 | `The planning loop isn't built yet` | Correct, at the start. That's the TODO in `agent.py` |
+| `ModuleNotFoundError: No module named 'flask'` (or `'mcp'`, `'google'`) | The `.venv` isn't active, or `pip install -r requirements.txt` hasn't been run in **this** copy. A fresh clone has no `.venv`. Check for `(.venv)` at the start of your prompt; if it's missing, run `.venv\Scripts\Activate.ps1`. Found by following this file from a clean clone (capstone) |
+| `running scripts is disabled on this system` when activating | PowerShell's execution policy. Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, then activate again |
 | `No GEMINI_API_KEY found` | No `.env`, or the key wasn't pasted in. On Windows check it didn't save as `.env.txt` |
 | A message saying the model couldn't be reached | Usually a bad key. This is also **exactly what unit 4 Milestone 2 asks you to trigger on purpose** |
 | `[rate limit] ... Waiting 34s` | Working as intended. Leave it |
