@@ -36,6 +36,7 @@ what belongs in one — and the timing field is the one everybody skips.
 import os
 import sys
 import threading
+import time
 
 # config first, and before anything that talks to the model: it loads your .env
 # and fixes the Windows console encoding for every module that imports it.
@@ -43,7 +44,9 @@ import config  # noqa: F401
 
 from flask import Flask, jsonify, request
 
+import generate  # capstone: read its token counters before/after each run
 from agent import run_agent
+from request_log import log_request
 from utils.data_loader import get_example_wardrobe
 
 app = Flask(__name__)
@@ -91,6 +94,11 @@ app = Flask(__name__)
 _one_at_a_time = threading.Lock()
 
 
+def _elapsed_ms(start: float) -> int:
+    """Milliseconds since `start` (a time.perf_counter() reading)."""
+    return round((time.perf_counter() - start) * 1000)
+
+
 @app.get("/health")
 def health():
     """Is the server awake? A host pings something like this to find out."""
@@ -107,9 +115,28 @@ def ask():
                                                 example wardrobe the CLI uses.
     Out:  the session dict from run_agent(), as JSON.
     """
+    # Capstone: start the clock the moment the request arrives, so duration_ms
+    # covers everything, including time spent waiting for the lock.
+    start = time.perf_counter()
+
     payload = request.get_json(silent=True) or {}
-    query = (payload.get("query") or "").strip()
+    # Capstone: a JSON body that isn't an object (e.g. [1, 2]) has no .get(),
+    # and would crash this route with an unlogged 500. Treat it as empty, so it
+    # falls into the 400 below like any other body without a query.
+    if not isinstance(payload, dict):
+        payload = {}
+
+    # Capstone: who is asking. The body's user_id if there is one, otherwise
+    # the caller's IP address, marked "ip:" so the two can't be confused.
+    user_id = str(payload.get("user_id") or "").strip() or f"ip:{request.remote_addr}"
+
+    raw_query = payload.get("query")
+    query = (raw_query if isinstance(raw_query, str) else "").strip()
     if not query:
+        log_request(
+            event="rejected", user_id=user_id, query=raw_query,
+            http_status=400, duration_ms=_elapsed_ms(start), error="missing_query",
+        )
         # 400 rather than a stack trace: the caller can act on this one.
         return jsonify({"error": "Send JSON with a 'query' field, e.g. "
                                  '{"query": "vintage graphic tee under $30"}'}), 400
@@ -139,16 +166,44 @@ def ask():
     failure = None
     session = None
     with _one_at_a_time:
+        # Capstone: generate.py's token counters only ever go up, for as long
+        # as the server runs. Read them just before and just after THIS run;
+        # the difference is what this request cost. Inside the lock, so no
+        # other request's model calls can land in between.
+        tokens_before = generate.token_counts()
         try:
             session = run_agent(query, wardrobe)
         except Exception as exc:  # noqa: BLE001 — a 500 with a sentence beats a hang
             failure = f"{type(exc).__name__}: {exc}"
+        tokens_after = generate.token_counts()
+
+    prompt_tokens = tokens_after["prompt"] - tokens_before["prompt"]
+    output_tokens = tokens_after["output"] - tokens_before["output"]
 
     # Outside the lock: building a response is not work the next caller should
     # be waiting on.
     if failure is not None:
+        log_request(
+            event="error", user_id=user_id, query=query, http_status=500,
+            duration_ms=_elapsed_ms(start), error=failure,
+            prompt_tokens=prompt_tokens, output_tokens=output_tokens,
+        )
         return jsonify({"error": failure}), 500
 
+    # Capstone: the agent ran. Record what it decided, not the whole session:
+    # the item's id is enough to look it up in data/listings.json, and the
+    # outfit and fit card text would make every log line paragraphs long.
+    selected = session.get("selected_item") or {}
+    log_request(
+        event="ask", user_id=user_id, query=query, http_status=200,
+        duration_ms=_elapsed_ms(start),
+        parsed=session.get("parsed"),
+        result_count=len(session.get("search_results") or []),
+        selected_item_id=selected.get("id"),
+        stopped_early=session.get("error") is not None,
+        error=session.get("error"),
+        prompt_tokens=prompt_tokens, output_tokens=output_tokens,
+    )
     return jsonify(session)
 
 

@@ -32,7 +32,7 @@ _lock = threading.Lock()
 
 # The fixed shape of every entry, in the order they are written.
 FIELDS = (
-    "timestamp",         # when the request arrived, UTC, ISO 8601
+    "timestamp",         # when the entry was written (request finished), UTC, ISO 8601
     "event",             # "ask" (agent ran), "rejected" (400/429), or "error" (500)
     "user_id",           # who asked: the body's user_id, or "ip:<address>"
     "query",             # what they asked, exactly as sent
