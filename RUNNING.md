@@ -155,6 +155,114 @@ the point of the session.
 
 ---
 
+## Capstone run path — Path B, local with logs
+
+This is how the capstone version runs: `serve.py` with a structured request
+log and a per-caller rate limit. **It runs on one machine, started by one
+command.** Nothing is hosted.
+
+### What the environment needs
+
+| Thing | What I ran it with |
+|---|---|
+| OS | Windows 11, PowerShell 7.4 (the commands below are PowerShell; bash equivalents are under them) |
+| Python | **3.12.3** (the starter supports 3.11–3.13, not 3.14) |
+| Packages | `requirements.txt` (ranges). Exact versions installed: Flask 3.1.3, Werkzeug 3.1.9, google-genai 1.75.0, mcp 1.30.0, python-dotenv 1.1.1, gunicorn 23.0.0 |
+| API key | `GEMINI_API_KEY` in `.env` (copy `.env.example`). The same key as unit 1 |
+| Model files | **None.** The model (`gemini-3.5-flash-lite`) runs at Google, called over the API. Nothing is downloaded, so there's no model size to account for |
+| Network | Internet access to the Gemini API |
+
+> **Use the terminal that made the `.venv`.** A `.venv` made by Windows Python
+> has `.venv\Scripts\Activate.ps1` and no `.venv/bin/activate`, so WSL can't
+> use it. Run everything here from PowerShell.
+
+### From a clean checkout
+
+```powershell
+git clone https://github.com/LuisFVillalon/ai201-project2-fitfindr-starter-v2026.git
+cd ai201-project2-fitfindr-starter-v2026
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+copy .env.example .env          # then paste your key into .env
+python test.py                  # must say "10 passed, 0 failed"
+```
+
+### The one command that starts it
+
+```powershell
+python serve.py
+```
+
+It prints `FitFindr is listening on http://localhost:5000` and waits. Leave
+that terminal open. **Ctrl+C** stops it.
+
+**For measuring cost, or running trials, turn the cache off first**, in the
+same terminal, before starting it:
+
+```powershell
+$env:AI201_CACHE = '0'
+python serve.py
+```
+
+With the cache on, a query that's been asked before is answered from `.cache/`
+without calling the model, and the log records `prompt_tokens: 0` for it.
+That's free while building, and wrong for a cost measurement.
+
+### Asking it something (a second terminal)
+
+```powershell
+curl.exe -s http://localhost:5000/health
+curl.exe -s -X POST http://localhost:5000/ask -H "Content-Type: application/json" -d '{"query": "vintage graphic tee under $30", "user_id": "luis"}'
+```
+
+bash / macOS:
+
+```bash
+curl -s -X POST http://localhost:5000/ask -H 'Content-Type: application/json' \
+  -d '{"query": "vintage graphic tee under $30", "user_id": "luis"}'
+```
+
+Write `curl.exe`, not `curl`, in PowerShell. Keep the body in **single
+quotes** so `$30` isn't read as a variable.
+
+`user_id` is optional. Without it, the caller is counted by IP address and
+logged as `ip:127.0.0.1`.
+
+### What it answers
+
+| Status | When | Body |
+|---|---|---|
+| `200` | The agent ran: a fit card, or a no-match message in `error` | the session dict |
+| `400` | No usable `query` (missing, blank, not text, or a body that isn't a JSON object) | `{"error": "Send JSON with a 'query' field..."}` |
+| `429` | The caller went over **5 per minute** or **30 per day** (`config.HTTP_LIMIT_PER_MINUTE`, `HTTP_LIMIT_PER_DAY`) | `{"error": "rate_limited", "message": ..., "retry_after_s": N}` plus a `Retry-After: N` header |
+| `500` | The agent raised an exception | `{"error": "<ExceptionType>: <message>"}` |
+
+### Where the record goes
+
+Every `/ask` request — including 400s, 429s and 500s — appends one JSON line
+to **`logs/requests.jsonl`** (written by `request_log.py`). Read it with:
+
+```powershell
+Get-Content logs\requests.jsonl
+```
+
+Each line has the same 13 fields (see `request_log.FIELDS`): `timestamp`,
+`event`, `user_id`, `query`, `http_status`, `duration_ms`, `parsed`,
+`result_count`, `selected_item_id`, `stopped_early`, `error`,
+`prompt_tokens`, `output_tokens`. A rate-limited line also has `limit` and
+`retry_after_s`. `/health` isn't logged.
+
+### Resetting between runs
+
+- **The rate limit lives in memory.** Restarting `serve.py` forgets every
+  caller's count.
+- **The log never resets itself.** It only appends. To start a clean record,
+  stop the server and delete `logs\requests.jsonl`; it's recreated on the next
+  request.
+
+---
+
 ## Where everything lives
 
 | File | What it does |
@@ -166,6 +274,9 @@ the point of the session.
 | `trace.py` | The trace helper, and the loop's stop condition |
 | `app.py` | The command line |
 | `serve.py` | The same agent over HTTP, for deploying — **unit 9** |
+| `request_log.py` | Writes one JSON line per `/ask` request to `logs/requests.jsonl` — **capstone** |
+| `rate_limit.py` | The per-caller limit `serve.py` checks before running the agent — **capstone** |
+| `logs/` | The request log. Created on the first request — **capstone** |
 | `mcp_server.py` | Your MCP server — **unit 4, you register the tool** |
 | `mcp_client.py` | Calling an MCP tool from your agent. Given to you |
 | `scenarios.py` | What your test runs. **You fill this in** |
