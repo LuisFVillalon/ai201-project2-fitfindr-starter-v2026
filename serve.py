@@ -45,6 +45,7 @@ import config  # noqa: F401
 from flask import Flask, jsonify, request
 
 import generate  # capstone: read its token counters before/after each run
+import rate_limit
 from agent import run_agent
 from request_log import log_request
 from utils.data_loader import get_example_wardrobe
@@ -140,6 +141,30 @@ def ask():
         # 400 rather than a stack trace: the caller can act on this one.
         return jsonify({"error": "Send JSON with a 'query' field, e.g. "
                                  '{"query": "vintage graphic tee under $30"}'}), 400
+
+    # Capstone: the rate limit. Where it sits is the point:
+    #   • AFTER the 400 check, so a malformed body (which costs nothing — it
+    #     never reaches the model) doesn't use up the caller's allowance.
+    #   • BEFORE the lock, so a refused request is answered in milliseconds
+    #     instead of waiting behind someone else's ~8-second agent run, and
+    #     never calls the model at all.
+    allowed, limit, retry_after = rate_limit.check(user_id)
+    if not allowed:
+        log_request(
+            event="rejected", user_id=user_id, query=query, http_status=429,
+            duration_ms=_elapsed_ms(start), error="rate_limited",
+            limit=limit, retry_after_s=retry_after,
+        )
+        response = jsonify({
+            "error": "rate_limited",
+            "message": f"You've reached the limit of {limit}. "
+                       f"Try again in {retry_after} seconds.",
+            "retry_after_s": retry_after,
+        })
+        # Retry-After is the standard HTTP header for "come back in N
+        # seconds"; well-behaved clients and scripts read it automatically.
+        response.headers["Retry-After"] = str(retry_after)
+        return response, 429
 
     wardrobe = payload.get("wardrobe")
     if not isinstance(wardrobe, dict):
