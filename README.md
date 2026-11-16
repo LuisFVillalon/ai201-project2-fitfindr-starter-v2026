@@ -771,3 +771,69 @@ selected: lst_002
 My criterion assumed a fresh clone starts with an empty log, and my repo made that untrue.
 
 **The pattern.** Criteria 1–4 passed every trial, and that was the likely result: each one tests a code path with no randomness in it. The log write, the 400 check and the rate-limit check all run before or around the model, never through it. Only criterion 4 touches the model's output, and its token counts moved by just 779–887 prompt and 180–262 output across trials. The one miss wasn't in code at all. It was in the gap between the repo I had and the repo a stranger clones, which is exactly the gap criterion 5 was written to test.
+
+**The Improvement**
+
+**What I changed (`a66e1f3`).** I made the live log and the committed record two separate files:
+
+1. I added `logs/` to [.gitignore](.gitignore), so the file `serve.py` appends to is never committed and a fresh clone gets no `logs/` folder.
+2. I moved the 72-line record with `git mv logs/requests.jsonl results/run_record_capstone.jsonl`. It's unchanged, Git tracks it as a rename, and it now sits in `results/` with the other evidence.
+3. I updated the three places that named the old location: the run-record link in **Running It**, and the `logs/` row and "Resetting between runs" in [RUNNING.md](RUNNING.md).
+
+No code changed. `request_log.py` still writes to `logs/requests.jsonl`, and `log_request` already creates the folder on the first request (`LOG_PATH.parent.mkdir(exist_ok=True)`). Every criterion still names `logs/requests.jsonl`, so none had to be revised.
+
+**Why this change.** The diagnosis said the miss came from one file doing two jobs, so the fix gives each job its own file. I also considered adding "delete `logs\requests.jsonl`" to RUNNING.md's clean-checkout steps. It would have passed the line count, but it fixes the symptom with one more manual step for every new reader, and criterion 5 exists to keep those steps at zero. It would also have left my history in every clone for anyone who skipped that line.
+
+**The second run.** Same procedure, three trials each, nothing changed between them.
+
+- **Criteria 1–4:** `python capstone_eval.py --label after` against `serve.py` with `AI201_CACHE=0`, on 2026-11-15 16:59–17:04. In my own repo, `logs/requests.jsonl` didn't exist before the server started. [results/capstone_after_20261115_165928.md](results/capstone_after_20261115_165928.md)
+- **Criterion 5:** three fresh clones of `a66e1f3`, on 2026-11-15 17:04–17:13. [results/capstone_after_criterion5_20261115_1704.md](results/capstone_after_criterion5_20261115_1704.md)
+
+| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
+|---|---|---|---|---|---|
+| 1. Successful responses logged | 3 of 3 | 3/3 | 3/3 | 3/3 | MET |
+| 2. Refusals during another run: 429 in < 500 ms, null tokens | 3 of 3 | 3/3 | 3/3 | 3/3 | MET |
+| 3. Refused requests logged (400) | 3 of 3 | 3/3 | 3/3 | 3/3 | MET |
+| 4. Cost per complete run < $0.0016 | 3 of 3 | 3/3 | 3/3 | 3/3 | MET |
+| 5. Starting FitFindr from RUNNING.md alone | 3 of 3 | 1/1 | 1/1 | 1/1 | MET |
+
+**Side by side:**
+
+| Criterion | Before: Run 1 / 2 / 3 | Before | After: Run 1 / 2 / 3 | After |
+|---|---|---|---|---|
+| 1. Successful responses logged | 3/3 · 3/3 · 3/3 | MET | 3/3 · 3/3 · 3/3 | MET |
+| 2. Refusals during another run | 3/3 · 3/3 · 3/3 | MET | 3/3 · 3/3 · 3/3 | MET |
+| 3. Refused requests logged (400) | 3/3 · 3/3 · 3/3 | MET | 3/3 · 3/3 · 3/3 | MET |
+| 4. Cost per complete run < $0.0016 | 3/3 · 3/3 · 3/3 | MET | 3/3 · 3/3 · 3/3 | MET |
+| 5. Starting from RUNNING.md alone | 0/1 · 0/1 · 0/1 | **MISSED** | 1/1 · 1/1 · 1/1 | **MET** |
+
+**Real output, Run 1 of the second run.** All of it came from `request_log.py::log_request`, called from `serve.py::ask`.
+
+*Criterion 5* (fresh clone, trial 1): the log went from no file to exactly 1 line.
+
+```
+commit: a66e1f3
+10 passed, 0 failed, 0 to look at, 0 skipped
+== log lines before serve.py: 0
+/health -> {"status":"ok"}
+/ask -> HTTP 200
+selected: lst_002
+== log lines after: 1
+```
+
+```json
+{"timestamp": "2026-11-16T01:08:03.537+00:00", "event": "ask", "user_id": "clone_t1", "query": "vintage graphic tee under $30", "http_status": 200, "duration_ms": 13065, "parsed": {"description": "vintage graphic tee", "size": null, "max_price": 30.0}, "result_count": 10, "selected_item_id": "lst_002", "stopped_early": false, "error": null, "prompt_tokens": 865, "output_tokens": 258}
+```
+
+*Criteria 1–4*, one line each (all trials are in the results file):
+
+```json
+{"timestamp": "2026-11-16T00:59:47.563+00:00", "event": "ask", "user_id": "after_t1_c1_20261115_165928", "query": "vintage graphic tee under $30", "http_status": 200, "duration_ms": 16806, "parsed": {"description": "vintage graphic tee", "size": null, "max_price": 30.0}, "result_count": 10, "selected_item_id": "lst_002", "stopped_early": false, "error": null, "prompt_tokens": 833, "output_tokens": 222}
+{"timestamp": "2026-11-16T01:00:38.229+00:00", "event": "rejected", "user_id": "after_t1_c2bob_20261115_165928", "query": "designer ballgown size XXS under $5", "http_status": 429, "duration_ms": 0, "parsed": null, "result_count": null, "selected_item_id": null, "stopped_early": null, "error": "rate_limited", "prompt_tokens": null, "output_tokens": null, "limit": "5 per minute", "retry_after_s": 28}
+{"timestamp": "2026-11-16T01:00:45.627+00:00", "event": "rejected", "user_id": "after_t1_c3_20261115_165928", "query": "", "http_status": 400, "duration_ms": 0, "parsed": null, "result_count": null, "selected_item_id": null, "stopped_early": null, "error": "missing_query", "prompt_tokens": null, "output_tokens": null}
+{"timestamp": "2026-11-16T01:01:07.793+00:00", "event": "ask", "user_id": "after_t1_c4_20261115_165928", "query": "flannel shirt under $40", "http_status": 200, "duration_ms": 6557, "parsed": {"description": "flannel shirt", "size": null, "max_price": 40.0}, "result_count": 3, "selected_item_id": "lst_003", "stopped_early": false, "error": null, "prompt_tokens": 878, "output_tokens": 253}
+```
+
+**Did it help, and how do I know.** Yes, for the one thing it was aimed at. Criterion 5 went from 0 of 3 to 3 of 3. The only check that changed was the one the diagnosis pointed to: lines before `serve.py` went from 72 to 0, and lines after one `/ask` went from 73 to 1. Every other check in the clones stayed the same as before. Criteria 1–4 held at 3/3 in every trial, which is what I expected, since no code changed. The second run confirms the move didn't break the server's log or the scoring that reads it. Criterion 4's costs ($0.000704–$0.000896 per run, against $0.000799–$0.000921 before) moved only as much as the model's output length varies. Nothing in the change touches tokens.
+
+**The trade-off.** The live log is no longer committed, so the raw record of any new session stays only on my machine unless I copy it into `results/` by hand. The second run's 54 log lines are in my local `logs/requests.jsonl` and are not in `results/run_record_capstone.jsonl`. What's committed for that run is the lines pasted into its two results files. Before, committing the log was automatic but handed every clone my history. Now a clean clone is automatic, and keeping a record is a step I have to remember.
