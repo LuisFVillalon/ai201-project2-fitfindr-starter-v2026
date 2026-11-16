@@ -260,6 +260,9 @@ Each line has the same 13 fields (see `request_log.FIELDS`): `timestamp`,
 - **The log never resets itself.** It only appends. To start a clean record,
   stop the server and delete `logs\requests.jsonl`; it's recreated on the next
   request.
+- **A fresh clone starts with no log.** `logs/` is in `.gitignore`, so your
+  first `/ask` creates `logs\requests.jsonl` with exactly one line. My own
+  sessions are kept separately in `results/run_record_capstone.jsonl`.
 
 ---
 
@@ -276,7 +279,8 @@ Each line has the same 13 fields (see `request_log.FIELDS`): `timestamp`,
 | `serve.py` | The same agent over HTTP, for deploying — **unit 9** |
 | `request_log.py` | Writes one JSON line per `/ask` request to `logs/requests.jsonl` — **capstone** |
 | `rate_limit.py` | The per-caller limit `serve.py` checks before running the agent — **capstone** |
-| `logs/` | The request log. Created on the first request — **capstone** |
+| `logs/` | The live request log. Created on the first request, and **not committed** (it's in `.gitignore`) — **capstone** |
+| `results/run_record_capstone.jsonl` | The committed run record: a copy of the log from the real capstone sessions — **capstone** |
 | `mcp_server.py` | Your MCP server — **unit 4, you register the tool** |
 | `mcp_client.py` | Calling an MCP tool from your agent. Given to you |
 | `scenarios.py` | What your test runs. **You fill this in** |

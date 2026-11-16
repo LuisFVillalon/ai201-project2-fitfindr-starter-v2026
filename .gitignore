@@ -15,6 +15,11 @@ env/
 # Cached model responses
 .cache/
 
+# The live request log (capstone). serve.py appends to logs/requests.jsonl, so
+# committing it hands every fresh clone someone else's history. The committed
+# run record lives in results/run_record_capstone.jsonl instead.
+logs/
+
 # OS noise
 .DS_Store
 Thumbs.db

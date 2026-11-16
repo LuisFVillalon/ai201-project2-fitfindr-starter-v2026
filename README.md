@@ -612,7 +612,7 @@ Everything else is in [RUNNING.md](RUNNING.md) under **Capstone run path — Pat
 
 I tested RUNNING.md by cloning the repo into a new folder and following it. The first attempt failed: I ran `python serve.py` before activating the new copy's `.venv` and got `ModuleNotFoundError: No module named 'flask'`. The setup steps were right, but nothing explained that error, so I added it (and PowerShell's "running scripts is disabled" error) to RUNNING.md's troubleshooting table. After setup, the fresh copy passed `test.py` (10 passed), answered `/health` and `/ask` (200), and created `logs/requests.jsonl` from nothing.
 
-The committed run record is [logs/requests.jsonl](logs/requests.jsonl): one real session, pasted in full below.
+The committed run record is [results/run_record_capstone.jsonl](results/run_record_capstone.jsonl): the first 18 lines are one real session, pasted in full below, and the rest are the criteria 1–4 trials. It was first committed as `logs/requests.jsonl`, then moved in The Improvement so the live log isn't committed.
 
 **Instrumentation**
 
