@@ -837,3 +837,26 @@ selected: lst_002
 **Did it help, and how do I know.** Yes, for the one thing it was aimed at. Criterion 5 went from 0 of 3 to 3 of 3. The only check that changed was the one the diagnosis pointed to: lines before `serve.py` went from 72 to 0, and lines after one `/ask` went from 73 to 1. Every other check in the clones stayed the same as before. Criteria 1–4 held at 3/3 in every trial, which is what I expected, since no code changed. The second run confirms the move didn't break the server's log or the scoring that reads it. Criterion 4's costs ($0.000704–$0.000896 per run, against $0.000799–$0.000921 before) moved only as much as the model's output length varies. Nothing in the change touches tokens.
 
 **The trade-off.** The live log is no longer committed, so the raw record of any new session stays only on my machine unless I copy it into `results/` by hand. The second run's 54 log lines are in my local `logs/requests.jsonl` and are not in `results/run_record_capstone.jsonl`. What's committed for that run is the lines pasted into its two results files. Before, committing the log was automatic but handed every clone my history. Now a clean clone is automatic, and keeping a record is a step I have to remember.
+
+**What's Still Broken**
+
+**No criterion is still missed.** After the improvement, all five held in all three trials. I stopped there because the one miss had a diagnosed cause and a fix that was measured to work, and the remaining time was better spent on an honest write-up than on more changes. Since all five were met, the question the brief asks is which targets were set too low.
+
+**The target I'd tighten first: criterion 4, from $0.0016 to $0.0011 per complete run.** My reason for $0.0016 was that it catches a bug that makes extra model calls. Checked against my own numbers, it only catches a run with two or more extra calls:
+
+```
+average complete run (2 model calls)       = $0.000824
+one model call                             ≈ $0.000824 / 2 = $0.000412
+a run with 1 extra call (3 calls)          ≈ $0.000824 + $0.000412 = $0.001236   → under $0.0016, PASSES
+a run with 2 extra calls (4 calls)         ≈ $0.000824 + $0.000824 = $0.001648   → over $0.0016, caught
+```
+
+So a bug that calls `suggest_outfit` twice would pass criterion 4 while costing 50% more per run. The most expensive real run across 19 complete runs (10 cost-measurement runs and 9 before-trial runs) was $0.000921, and none of the 9 after-trial runs went higher. **$0.0011** sits above every real run (19% above the most expensive one) and below the 3-call run ($0.001236), so a single extra call would fail the criterion.
+
+**Criterion 2's 500 ms was also loose.** Every refusal in both runs took 0–1 ms (18 of 18). The 500 ms bound only proves that refusals don't wait behind another user's run, which takes about 5,000 ms here. I'd tighten it to **under 50 ms**. That's still far above the measured 0–1 ms, so it allows for a slower machine, but it would catch a refusal that does any real work first, such as reading the log or loading the listings.
+
+**Three requests per trial is a small sample for the deterministic criteria.** Criteria 1 and 3 test code with no randomness, so 3 of 3 is what they were always going to do. If one of them broke, it would break every time, and three requests would still catch it. What they don't cover is volume. That's what my named stretch, the 10× load observation, was meant to test, and I didn't run it.
+
+**Known gap, not covered by any criterion: `prompt_tokens: 0` means two different things.** It's logged both when the agent stops before the model (no match) and when a complete run's answer comes from `.cache/`. Nothing in the line tells those apart. My cost numbers are right only because every measured run had the cache off.
+
+**Next step.** I'd add a `cache_hit` field to every log line, set from `generate.py` when an answer comes from `.cache/` instead of the API. The cost number is the one figure this capstone exists to produce, and right now it is only correct if whoever runs the server remembers to set `AI201_CACHE=0`, which the log itself can't verify.
