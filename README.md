@@ -692,3 +692,82 @@ $0.0824   × 30 days      = $2.47 per month
 Output is 21% of the tokens but 69% of the cost ($0.000572 of $0.000824), because it's priced over 8× higher than input. Shorter outfit suggestions would cut cost more than shorter prompts.
 
 **What the rate limit does to the worst case.** If all 100 people used their full 30 a day, that would be `$0.000824 × 100 × 30 = $2.47 per day`. In practice the server can't get there: `generate.py`'s `SESSION_REQUEST_BUDGET` is 300 model calls, and each run is 2, so a server stops after about 150 runs (about $0.12) until it's restarted. So the two limits do different jobs. My per-caller limit keeps any one caller to 30 runs a day, a fifth of what the server can do. The starter's session budget caps what the whole server can spend.
+
+**Run Log and Verdicts**
+
+The five criteria are in [criteria.md](criteria.md) under **Capstone criteria**, committed in `773c8bc` before any trial ran. Each was run three times with nothing changed in between.
+
+- **Criteria 1–4:** `python capstone_eval.py --label before`, run against `python serve.py` with the cache off (`AI201_CACHE=0`), on 2026-11-15 13:36–13:40. Each criterion in each trial uses its own `user_id`, so its log lines can be picked out exactly and one criterion's requests never count against another's rate limit. Full output: [results/capstone_before_20261115_133549.md](results/capstone_before_20261115_133549.md).
+- **Criterion 5:** three fresh clones of `7a6aa51` from GitHub on 2026-11-15 16:38–16:48. Each was a new PowerShell process with no `.venv` active, followed only RUNNING.md's clean-checkout steps, then started `serve.py`, called `/health`, sent one `/ask`, and counted the log lines. Full output: [results/capstone_before_criterion5_20261115_1638.md](results/capstone_before_criterion5_20261115_1638.md).
+
+| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
+|---|---|---|---|---|---|
+| 1. Successful responses logged | 3 of 3 | 3/3 | 3/3 | 3/3 | MET |
+| 2. Refusals during another run: 429 in < 500 ms, null tokens | 3 of 3 | 3/3 | 3/3 | 3/3 | MET |
+| 3. Refused requests logged (400) | 3 of 3 | 3/3 | 3/3 | 3/3 | MET |
+| 4. Cost per complete run < $0.0016 | 3 of 3 | 3/3 | 3/3 | 3/3 | MET |
+| 5. Starting FitFindr from RUNNING.md alone | 3 of 3 | 0/1 | 0/1 | 0/1 | MISSED |
+
+**Real output, Run 1.** Every line below was written by `request_log.py::log_request`, called from `serve.py::ask`. The `capstone_eval.py` function that sent the requests and scored them is named for each criterion.
+
+*Criterion 1* (`criterion_1`): three non-empty queries, three lines, each `http_status: 200`. The third is the no-match query. It still gets a 200 because the agent ran and answered with a message, and it logs `stopped_early: true` with 0 tokens.
+
+```json
+{"timestamp": "2026-11-15T21:36:03.797+00:00", "event": "ask", "user_id": "before_t1_c1_20261115_133549", "query": "vintage graphic tee under $30", "http_status": 200, "duration_ms": 12747, "parsed": {"description": "vintage graphic tee", "size": null, "max_price": 30.0}, "result_count": 10, "selected_item_id": "lst_002", "stopped_early": false, "error": null, "prompt_tokens": 831, "output_tokens": 220}
+{"timestamp": "2026-11-15T21:36:11.410+00:00", "event": "ask", "user_id": "before_t1_c1_20261115_133549", "query": "leather belt", "http_status": 200, "duration_ms": 5545, "parsed": {"description": "leather belt", "size": null, "max_price": null}, "result_count": 4, "selected_item_id": "lst_014", "stopped_early": false, "error": null, "prompt_tokens": 841, "output_tokens": 243}
+{"timestamp": "2026-11-15T21:36:16.648+00:00", "event": "ask", "user_id": "before_t1_c1_20261115_133549", "query": "designer ballgown size XXS under $5", "http_status": 200, "duration_ms": 3181, "parsed": {"description": "designer ballgown", "size": "XXS", "max_price": 5.0}, "result_count": 0, "selected_item_id": null, "stopped_early": true, "error": "No listings matched \"designer ballgown\" in size XXS under $5. Try a max price higher than $5, a different size or no size, or fewer or broader keywords.", "prompt_tokens": 0, "output_tokens": 0}
+```
+
+*Criterion 2* (`criterion_2`): "alice" runs the agent while "bob", already over his 5-per-minute limit, sends three more requests. Alice's run took 5,949 ms and finished at 21:36:51.112, so it started at about 21:36:45.16. All three of bob's 429s (45.676, 47.709, 49.739) landed inside that run, and each took 0–1 ms with `null` tokens. They didn't wait behind alice because the limit is checked before `serve.py`'s one-at-a-time lock.
+
+```json
+{"timestamp": "2026-11-15T21:36:51.112+00:00", "event": "ask", "user_id": "before_t1_c2alice_20261115_133549", "query": "vintage polo shirt", "http_status": 200, "duration_ms": 5949, "parsed": {"description": "vintage polo shirt", "size": null, "max_price": null}, "result_count": 10, "selected_item_id": "lst_024", "stopped_early": false, "error": null, "prompt_tokens": 853, "output_tokens": 244}
+{"timestamp": "2026-11-15T21:36:45.676+00:00", "event": "rejected", "user_id": "before_t1_c2bob_20261115_133549", "query": "designer ballgown size XXS under $5", "http_status": 429, "duration_ms": 0, "parsed": null, "result_count": null, "selected_item_id": null, "stopped_early": null, "error": "rate_limited", "prompt_tokens": null, "output_tokens": null, "limit": "5 per minute", "retry_after_s": 33}
+{"timestamp": "2026-11-15T21:36:47.709+00:00", "event": "rejected", "user_id": "before_t1_c2bob_20261115_133549", "query": "designer ballgown size XXS under $5", "http_status": 429, "duration_ms": 0, "parsed": null, "result_count": null, "selected_item_id": null, "stopped_early": null, "error": "rate_limited", "prompt_tokens": null, "output_tokens": null, "limit": "5 per minute", "retry_after_s": 31}
+{"timestamp": "2026-11-15T21:36:49.739+00:00", "event": "rejected", "user_id": "before_t1_c2bob_20261115_133549", "query": "designer ballgown size XXS under $5", "http_status": 429, "duration_ms": 0, "parsed": null, "result_count": null, "selected_item_id": null, "stopped_early": null, "error": "rate_limited", "prompt_tokens": null, "output_tokens": null, "limit": "5 per minute", "retry_after_s": 29}
+```
+
+*Criterion 3* (`criterion_3`): an empty query, a whitespace-only query and a number. Each got a 400 and exactly one line.
+
+```json
+{"timestamp": "2026-11-15T21:36:53.208+00:00", "event": "rejected", "user_id": "before_t1_c3_20261115_133549", "query": "", "http_status": 400, "duration_ms": 0, "parsed": null, "result_count": null, "selected_item_id": null, "stopped_early": null, "error": "missing_query", "prompt_tokens": null, "output_tokens": null}
+{"timestamp": "2026-11-15T21:36:55.256+00:00", "event": "rejected", "user_id": "before_t1_c3_20261115_133549", "query": "   ", "http_status": 400, "duration_ms": 0, "parsed": null, "result_count": null, "selected_item_id": null, "stopped_early": null, "error": "missing_query", "prompt_tokens": null, "output_tokens": null}
+{"timestamp": "2026-11-15T21:36:57.312+00:00", "event": "rejected", "user_id": "before_t1_c3_20261115_133549", "query": 12345, "http_status": 400, "duration_ms": 0, "parsed": null, "result_count": null, "selected_item_id": null, "stopped_early": null, "error": "missing_query", "prompt_tokens": null, "output_tokens": null}
+```
+
+*Criterion 4* (`criterion_4`, priced by `cost_of`): three complete runs with the cache off. The most expensive was $0.000892, 56% of the $0.0016 ceiling.
+
+```
+'denim jacket size M':     852 + 252 tokens = $0.000886
+'flannel shirt under $40': 881 + 251 tokens = $0.000892
+'bucket hat':              859 + 243 tokens = $0.000865
+```
+
+```json
+{"timestamp": "2026-11-15T21:37:04.832+00:00", "event": "ask", "user_id": "before_t1_c4_20261115_133549", "query": "denim jacket size M", "http_status": 200, "duration_ms": 5401, "parsed": {"description": "denim jacket", "size": "M", "max_price": null}, "result_count": 4, "selected_item_id": "lst_038", "stopped_early": false, "error": null, "prompt_tokens": 852, "output_tokens": 252}
+{"timestamp": "2026-11-15T21:37:12.687+00:00", "event": "ask", "user_id": "before_t1_c4_20261115_133549", "query": "flannel shirt under $40", "http_status": 200, "duration_ms": 5788, "parsed": {"description": "flannel shirt", "size": null, "max_price": 40.0}, "result_count": 3, "selected_item_id": "lst_003", "stopped_early": false, "error": null, "prompt_tokens": 881, "output_tokens": 251}
+{"timestamp": "2026-11-15T21:37:19.975+00:00", "event": "ask", "user_id": "before_t1_c4_20261115_133549", "query": "bucket hat", "http_status": 200, "duration_ms": 5251, "parsed": {"description": "bucket hat", "size": null, "max_price": null}, "result_count": 1, "selected_item_id": "lst_034", "stopped_early": false, "error": null, "prompt_tokens": 859, "output_tokens": 243}
+```
+
+*Criterion 5* (fresh clone, trial 1): every step passed except the last check.
+
+```
+== log lines before serve.py: 72
+/health -> {"status":"ok"}
+/ask -> HTTP 200
+selected: lst_002
+== log lines after: 73
+```
+
+```json
+{"timestamp": "2026-11-16T00:41:17.265+00:00", "event": "ask", "user_id": "clone_t1", "query": "vintage graphic tee under $30", "http_status": 200, "duration_ms": 10954, "parsed": {"description": "vintage graphic tee", "size": null, "max_price": 30.0}, "result_count": 10, "selected_item_id": "lst_002", "stopped_early": false, "error": null, "prompt_tokens": 856, "output_tokens": 246}
+```
+
+**Diagnosis of the miss: criterion 5.** All three clones needed 0 undocumented steps, passed `test.py` (10 passed), got `ok` from `/health` and a 200 from `/ask`. All three still failed on the last check: `logs/requests.jsonl` held **73 lines**, not 1. The cause wasn't the agent or the server code, and it wasn't luck. It was the same in every trial (72 before, 73 after).
+
+- **The stage** is the run path: what the repository hands a new reader.
+- **The mechanism:** `logs/requests.jsonl` was doing two jobs. It was my committed run record (72 lines from the cost measurement and the criteria 1–4 trials), and it was also the live file that `request_log.py::log_request` opens in append mode (`LOG_PATH.open("a")`) on every request. Committing the record put my history into every clone, and the server then added the clone's first request to the end of it. RUNNING.md's clean-checkout steps never said to clear the file. That instruction only appeared later, under "Resetting between runs", so following the run path alone couldn't produce a 1-line log.
+
+My criterion assumed a fresh clone starts with an empty log, and my repo made that untrue.
+
+**The pattern.** Criteria 1–4 passed every trial, and that was the likely result: each one tests a code path with no randomness in it. The log write, the 400 check and the rate-limit check all run before or around the model, never through it. Only criterion 4 touches the model's output, and its token counts moved by just 779–887 prompt and 180–262 output across trials. The one miss wasn't in code at all. It was in the gap between the repo I had and the repo a stranger clones, which is exactly the gap criterion 5 was written to test.
