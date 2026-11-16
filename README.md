@@ -838,6 +838,44 @@ selected: lst_002
 
 **The trade-off.** The live log is no longer committed, so the raw record of any new session stays only on my machine unless I copy it into `results/` by hand. The second run's 54 log lines are in my local `logs/requests.jsonl` and are not in `results/run_record_capstone.jsonl`. What's committed for that run is the lines pasted into its two results files. Before, committing the log was automatic but handed every clone my history. Now a clean clone is automatic, and keeping a record is a step I have to remember.
 
+**Load Observation (stretch)**
+
+This was named as a stretch in **The Shape** before I started.
+
+**Normal rate is 5 requests a minute.** That's the most one caller is allowed (`config.HTTP_LIMIT_PER_MINUTE`) and about the pace `measure_cost.py` ran at. **Ten times that is 50 requests in one minute**, one every 1.2 s. [load_test.py](load_test.py) sends each request on its own thread, so none waits for an earlier answer before the next goes out, the way separate users would behave. I sent the 50 two ways, because there are two different limits in front of the agent:
+
+- **A. One caller sends all 50.** This tests my per-caller rate limit.
+- **B. Ten callers send 5 each, taking turns.** Every caller stays at the normal rate, so every request passes my limit. This tests what's behind it: `serve.py`'s one-at-a-time lock and `generate.py`'s pacing of 15 model calls a minute.
+
+Every allowed request was a matching query from `measure_cost.py`'s list, so each one was a complete run with two model calls, the expensive case. The run was on 2026-11-15 at 17:20, with the cache off, scored from `logs/requests.jsonl`. Full output and all 100 log lines: [results/capstone_load_20261115_172050.md](results/capstone_load_20261115_172050.md).
+
+| Measure | Normal (one run alone) | A. One caller, 50/min | B. Ten callers, 50/min total |
+|---|---|---|---|
+| Requests sent / log lines written | | 50 / 50 | 50 / 50 |
+| 200 / 429 / 500 | | 5 / 45 / 0 | 50 / 0 / 0 |
+| Client timeouts or no answer | | 0 | 0 |
+| 429 duration_ms (min / median / max) | 0–1 | 0 / 0 / 0 | n/a |
+| 200 duration_ms (min / median / max) | about 5,000 | 13,278 / 21,106 / 29,885 | 5,071 / **172,079** / **339,631** |
+| Complete runs finished per minute | | 5 in 21 s | **7.5** |
+| Wall time until the last answer | | 61 s | **400 s** |
+| Cost of the complete runs (paid-tier prices) | $0.000824 | $0.003855 (5 runs) | $0.040641 (50 runs) |
+
+**What changed at 10×:**
+
+1. **Nothing failed.** All 100 requests got an answer and wrote exactly one log line. There were no 500s, no client timeouts and no `stopped_early` runs, and every complete run logged real tokens (no 0s), so the cache really was off.
+2. **My rate limit held under load (A).** It allowed exactly 5 and refused the other 45 in **0 ms** each, with `null` tokens, the same as at normal rate. The refusals came back while A's own allowed runs were still queued: the first 429 was logged at 01:20:58.675, 7 seconds before A's first 200 finished at 01:21:05.979. That's because the limit is checked before the lock.
+3. **The 5 allowed requests still slowed down (A).** They took 13–30 s instead of about 5 s, because they arrived 1.2 s apart and each waited behind the one before it.
+4. **Many callers who each stay under the limit make the server very slow (B).** The server finished exactly **7.5 runs a minute**. That's `generate.py`'s 15 model calls a minute divided by 2 calls per run, and the server log shows the pacing (`[rate limit] 15 requests used this minute. Waiting 3s. This is normal.`). With 50 arriving a minute and 7.5 leaving, the queue grew by about 42 a minute. The median caller waited **2.9 minutes** and the last waited **5.7 minutes** for an answer to something that takes 5 seconds alone. 60 seconds of traffic took 400 seconds to clear.
+
+**The stage and the mechanism.** The slowdown is in `generate.py`'s pacing, the free tier's 15 calls a minute, and `serve.py`'s lock turns it into a queue that nothing limits. My rate limit counts per caller, so it caps what **one** caller can cost but says nothing about how many callers are waiting. Ten callers who each follow the rules overload the server just as badly as one caller who doesn't.
+
+Two sample lines from B, the first request in and the last one served:
+
+```json
+{"timestamp": "2026-11-16T01:22:03.686+00:00", "event": "ask", "user_id": "loadB00_20261115_172050", "query": "vintage graphic tee under $30", "http_status": 200, "duration_ms": 5071, "parsed": {"description": "vintage graphic tee", "size": null, "max_price": 30.0}, "result_count": 10, "selected_item_id": "lst_002", "stopped_early": false, "error": null, "prompt_tokens": 836, "output_tokens": 227}
+{"timestamp": "2026-11-16T01:28:37.046+00:00", "event": "ask", "user_id": "loadB09_20261115_172050", "query": "vintage polo shirt", "http_status": 200, "duration_ms": 339631, "parsed": {"description": "vintage polo shirt", "size": null, "max_price": null}, "result_count": 10, "selected_item_id": "lst_024", "stopped_early": false, "error": null, "prompt_tokens": 836, "output_tokens": 227}
+```
+
 **What's Still Broken**
 
 **No criterion is still missed.** After the improvement, all five held in all three trials. I stopped there because the one miss had a diagnosed cause and a fix that was measured to work, and the remaining time was better spent on an honest write-up than on more changes. Since all five were met, the question the brief asks is which targets were set too low.
@@ -855,7 +893,9 @@ So a bug that calls `suggest_outfit` twice would pass criterion 4 while costing 
 
 **Criterion 2's 500 ms was also loose.** Every refusal in both runs took 0–1 ms (18 of 18). The 500 ms bound only proves that refusals don't wait behind another user's run, which takes about 5,000 ms here. I'd tighten it to **under 50 ms**. That's still far above the measured 0–1 ms, so it allows for a slower machine, but it would catch a refusal that does any real work first, such as reading the log or loading the listings.
 
-**Three requests per trial is a small sample for the deterministic criteria.** Criteria 1 and 3 test code with no randomness, so 3 of 3 is what they were always going to do. If one of them broke, it would break every time, and three requests would still catch it. What they don't cover is volume. That's what my named stretch, the 10× load observation, was meant to test, and I didn't run it.
+**Three requests per trial is a small sample for the deterministic criteria.** Criteria 1 and 3 test code with no randomness, so 3 of 3 is what they were always going to do. If one of them broke, it would break every time, and three requests would still catch it. What they don't cover is volume, and the load observation showed that's where the real weakness is.
+
+**Not covered by any criterion: many callers can make the server unusably slow.** In the load observation, ten callers each at the allowed 5 a minute all got 200s, but the last waited 5.7 minutes, because my limit counts per caller and nothing caps the queue behind `serve.py`'s lock. To fix it, I'd add a server-wide check before the lock: if the requests already waiting would take more than about 60 seconds to clear (each run takes about 8 s at 7.5 a minute, so 7 or more waiting), answer `503` with `Retry-After` right away instead of queuing. I'd write the criterion as: "At 50 requests/minute from 10 callers, no 200 takes longer than 60,000 ms, and every request that isn't served gets a 503 in under 50 ms." I didn't build it because it's a second change to the system, and the brief asks for one improvement, measured.
 
 **Known gap, not covered by any criterion: `prompt_tokens: 0` means two different things.** It's logged both when the agent stops before the model (no match) and when a complete run's answer comes from `.cache/`. Nothing in the line tells those apart. My cost numbers are right only because every measured run had the cache off.
 
