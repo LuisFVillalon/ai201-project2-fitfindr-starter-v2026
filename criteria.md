@@ -175,7 +175,7 @@ so an empty result can't pass by default.
 
 **Target:** While another user's request is running the agent, 3 of 3 requests from a user already over the per-minute limit get a 429 in under 500 ms (measured by duration_ms in the log ), with null tokens used.
 
-**Why this target:** Refused requests should not spend tokens, so tha the limit actually saves money.  We set it at 500 ms because a correct refusal takes about 0 ms, while a refusal stuck behind another user's run would wait up to 3,100 ms, so 500 ms is a good fit. A refused user shouldn't have to wait 3,100 ms just to be told no.
+**Why this target:** Refused requests should not spend tokens, so that the limit actually saves money.  We set it at 500 ms because a correct refusal takes about 0 ms, while a refusal stuck behind another user's run would wait up to 3,100 ms, so 500 ms is a good fit. A refused user shouldn't have to wait 3,100 ms just to be told no.
 
 ---
 
